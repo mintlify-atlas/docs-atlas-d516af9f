@@ -1,0 +1,453 @@
+---
+title: Inline nodes
+description: Reference for all inline-level AST node types that appear within block content
+---
+
+Inline nodes represent content within block nodes like paragraphs and headings. They handle text formatting, links, images, and other inline markup.
+
+## InlineNode type
+
+```typescript
+type InlineNode =
+  | TextNode
+  | CodeSpanNode
+  | HardBreakNode
+  | SoftBreakNode
+  | StrongNode
+  | EmphasisNode
+  | LinkNode
+  | ImageNode
+  | HtmlTagNode;
+```
+
+## TextNode
+
+Represents plain text content.
+
+```typescript
+interface TextNode {
+  type: "text";
+  text: string;
+}
+```
+
+<ResponseField name="type" type="string" required>
+  Always `"text"`
+</ResponseField>
+
+<ResponseField name="text" type="string" required>
+  The text content. HTML entities are decoded and escape sequences are processed.
+</ResponseField>
+
+### Example
+
+```typescript
+const nodes = parser.parse('Hello world');
+// [{ type: 'paragraph', children: [{ type: 'text', text: 'Hello world' }] }]
+```
+
+## EmphasisNode
+
+Represents emphasized text (typically rendered as italic).
+
+```typescript
+interface EmphasisNode {
+  type: "emphasis";
+  children: Array<InlineNode>;
+}
+```
+
+<ResponseField name="type" type="string" required>
+  Always `"emphasis"`
+</ResponseField>
+
+<ResponseField name="children" type="InlineNode[]" required>
+  Inline nodes contained within the emphasis. Can be nested.
+</ResponseField>
+
+### Example
+
+```typescript
+const nodes = parser.parse('This is *emphasized* text');
+// [
+//   {
+//     type: 'paragraph',
+//     children: [
+//       { type: 'text', text: 'This is ' },
+//       { type: 'emphasis', children: [{ type: 'text', text: 'emphasized' }] },
+//       { type: 'text', text: ' text' }
+//     ]
+//   }
+// ]
+```
+
+Both `*emphasis*` and `_emphasis_` syntax are supported.
+
+## StrongNode
+
+Represents strong emphasis (typically rendered as bold).
+
+```typescript
+interface StrongNode {
+  type: "strong";
+  children: Array<InlineNode>;
+}
+```
+
+<ResponseField name="type" type="string" required>
+  Always `"strong"`
+</ResponseField>
+
+<ResponseField name="children" type="InlineNode[]" required>
+  Inline nodes contained within the strong emphasis. Can be nested.
+</ResponseField>
+
+### Example
+
+```typescript
+const nodes = parser.parse('This is **strong** text');
+// [
+//   {
+//     type: 'paragraph',
+//     children: [
+//       { type: 'text', text: 'This is ' },
+//       { type: 'strong', children: [{ type: 'text', text: 'strong' }] },
+//       { type: 'text', text: ' text' }
+//     ]
+//   }
+// ]
+```
+
+Both `**strong**` and `__strong__` syntax are supported.
+
+## CodeSpanNode
+
+Represents inline code.
+
+```typescript
+interface CodeSpanNode {
+  type: "code-span";
+  text: string;
+}
+```
+
+<ResponseField name="type" type="string" required>
+  Always `"code-span"`
+</ResponseField>
+
+<ResponseField name="text" type="string" required>
+  The code content. Leading and trailing spaces are stripped if both are present. Newlines are converted to spaces.
+</ResponseField>
+
+### Example
+
+```typescript
+const nodes = parser.parse('Use `const` for constants');
+// [
+//   {
+//     type: 'paragraph',
+//     children: [
+//       { type: 'text', text: 'Use ' },
+//       { type: 'code-span', text: 'const' },
+//       { type: 'text', text: ' for constants' }
+//     ]
+//   }
+// ]
+```
+
+## LinkNode
+
+Represents hyperlinks, both inline and reference-style.
+
+```typescript
+interface LinkNode {
+  type: "link";
+  href: string;
+  title?: string;
+  children: Array<InlineNode>;
+}
+```
+
+<ResponseField name="type" type="string" required>
+  Always `"link"`
+</ResponseField>
+
+<ResponseField name="href" type="string" required>
+  The link destination URL. Unsafe characters are percent-encoded.
+</ResponseField>
+
+<ResponseField name="title" type="string">
+  Optional link title (shown as tooltip in HTML). Present if the link includes a title attribute.
+</ResponseField>
+
+<ResponseField name="children" type="InlineNode[]" required>
+  Link text content as inline nodes. Per CommonMark spec, links cannot contain other links.
+</ResponseField>
+
+### Example
+
+<Tabs>
+  <Tab title="Inline link">
+    ```typescript
+    const nodes = parser.parse('[Example](https://example.com "Title")');
+    // [
+    //   {
+    //     type: 'paragraph',
+    //     children: [
+    //       {
+    //         type: 'link',
+    //         href: 'https://example.com',
+    //         title: 'Title',
+    //         children: [{ type: 'text', text: 'Example' }]
+    //       }
+    //     ]
+    //   }
+    // ]
+    ```
+  </Tab>
+  <Tab title="Reference link">
+    ```typescript
+    const markdown = `
+    [example]: https://example.com
+    
+    Check [example] for more.
+    `;
+    
+    const nodes = parser.parse(markdown);
+    // Reference definition is resolved automatically
+    // [
+    //   {
+    //     type: 'paragraph',
+    //     children: [
+    //       { type: 'text', text: 'Check ' },
+    //       {
+    //         type: 'link',
+    //         href: 'https://example.com',
+    //         children: [{ type: 'text', text: 'example' }]
+    //       },
+    //       { type: 'text', text: ' for more.' }
+    //     ]
+    //   }
+    // ]
+    ```
+  </Tab>
+  <Tab title="Autolink">
+    ```typescript
+    const nodes = parser.parse('<https://example.com>');
+    // [
+    //   {
+    //     type: 'paragraph',
+    //     children: [
+    //       {
+    //         type: 'link',
+    //         href: 'https://example.com',
+    //         children: [{ type: 'text', text: 'https://example.com' }]
+    //       }
+    //     ]
+    //   }
+    // ]
+    ```
+  </Tab>
+</Tabs>
+
+## ImageNode
+
+Represents images with similar syntax to links.
+
+```typescript
+interface ImageNode {
+  type: "image";
+  href: string;
+  title?: string;
+  children: Array<InlineNode>;
+}
+```
+
+<ResponseField name="type" type="string" required>
+  Always `"image"`
+</ResponseField>
+
+<ResponseField name="href" type="string" required>
+  The image source URL. Unsafe characters are percent-encoded.
+</ResponseField>
+
+<ResponseField name="title" type="string">
+  Optional image title attribute
+</ResponseField>
+
+<ResponseField name="children" type="InlineNode[]" required>
+  Alt text content as inline nodes (typically a single text node)
+</ResponseField>
+
+### Example
+
+```typescript
+const nodes = parser.parse('![Alt text](image.png "Image title")');
+// [
+//   {
+//     type: 'paragraph',
+//     children: [
+//       {
+//         type: 'image',
+//         href: 'image.png',
+//         title: 'Image title',
+//         children: [{ type: 'text', text: 'Alt text' }]
+//       }
+//     ]
+//   }
+// ]
+```
+
+## HardBreakNode
+
+Represents an explicit line break (two or more spaces at end of line, or backslash before newline).
+
+```typescript
+interface HardBreakNode {
+  type: "hardbreak";
+}
+```
+
+<ResponseField name="type" type="string" required>
+  Always `"hardbreak"`
+</ResponseField>
+
+### Example
+
+<Tabs>
+  <Tab title="Trailing spaces">
+    ```typescript
+    const nodes = parser.parse('First line  \nSecond line');
+    // [
+    //   {
+    //     type: 'paragraph',
+    //     children: [
+    //       { type: 'text', text: 'First line' },
+    //       { type: 'hardbreak' },
+    //       { type: 'text', text: 'Second line' }
+    //     ]
+    //   }
+    // ]
+    ```
+  </Tab>
+  <Tab title="Backslash">
+    ```typescript
+    const nodes = parser.parse('First line\\\nSecond line');
+    // [
+    //   {
+    //     type: 'paragraph',
+    //     children: [
+    //       { type: 'text', text: 'First line' },
+    //       { type: 'hardbreak' },
+    //       { type: 'text', text: 'Second line' }
+    //     ]
+    //   }
+    // ]
+    ```
+  </Tab>
+</Tabs>
+
+## SoftBreakNode
+
+Represents a line break in the source that doesn't create a hard break (single newline without trailing spaces).
+
+```typescript
+interface SoftBreakNode {
+  type: "softbreak";
+}
+```
+
+<ResponseField name="type" type="string" required>
+  Always `"softbreak"`
+</ResponseField>
+
+### Example
+
+```typescript
+const nodes = parser.parse('First line\nSecond line');
+// [
+//   {
+//     type: 'paragraph',
+//     children: [
+//       { type: 'text', text: 'First line' },
+//       { type: 'softbreak' },
+//       { type: 'text', text: 'Second line' }
+//     ]
+//   }
+// ]
+```
+
+Soft breaks are typically rendered as spaces in HTML but preserved in other contexts.
+
+## HtmlTagNode
+
+Represents raw inline HTML tags.
+
+```typescript
+interface HtmlTagNode {
+  type: "html";
+  content: string;
+}
+```
+
+<ResponseField name="type" type="string" required>
+  Always `"html"`
+</ResponseField>
+
+<ResponseField name="content" type="string" required>
+  The raw HTML tag content exactly as it appears in the source. Includes opening tags, closing tags, comments, processing instructions, declarations, and CDATA sections.
+</ResponseField>
+
+### Example
+
+```typescript
+const nodes = parser.parse('Text with <span class="highlight">HTML</span>');
+// [
+//   {
+//     type: 'paragraph',
+//     children: [
+//       { type: 'text', text: 'Text with ' },
+//       { type: 'html', content: '<span class="highlight">' },
+//       { type: 'text', text: 'HTML' },
+//       { type: 'html', content: '</span>' }
+//     ]
+//   }
+// ]
+```
+
+## Nested structures
+
+Inline nodes can be nested to represent complex formatting:
+
+```typescript
+const nodes = parser.parse('**Bold with *emphasis* inside**');
+// [
+//   {
+//     type: 'paragraph',
+//     children: [
+//       {
+//         type: 'strong',
+//         children: [
+//           { type: 'text', text: 'Bold with ' },
+//           {
+//             type: 'emphasis',
+//             children: [{ type: 'text', text: 'emphasis' }]
+//           },
+//           { type: 'text', text: ' inside' }
+//         ]
+//       }
+//     ]
+//   }
+// ]
+```
+
+## CommonMark compliance
+
+All inline parsing follows [CommonMark 0.31.2](https://spec.commonmark.org/0.31.2/) rules including:
+
+- Left and right-flanking delimiter runs for emphasis/strong
+- The "rule of 3" for emphasis delimiter matching
+- Proper handling of escaped characters
+- Link precedence rules (links cannot contain other links)
+- Backslash escaping for ASCII punctuation
+- HTML entity decoding

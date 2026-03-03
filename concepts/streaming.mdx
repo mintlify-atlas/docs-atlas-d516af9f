@@ -1,0 +1,294 @@
+---
+title: Streaming
+description: Learn how to use streaming mode to incrementally parse markdown as it arrives, perfect for LLM outputs and real-time content
+---
+
+## Overview
+
+Streaming mode enables incremental parsing of markdown content as it arrives, making it ideal for processing LLM outputs or any scenario where content is generated progressively. The parser maintains internal state across calls and only returns blocks that have been finalized.
+
+<Info>
+When streaming is disabled (default), the parser finalizes all open blocks at the end of the input. With streaming enabled, blocks are only emitted once they become stable and closed.
+</Info>
+
+## How streaming works
+
+The parser implements streaming by tracking which blocks are "closed" versus "open":
+
+- **Closed blocks**: Fully parsed and stable, ready to be emitted
+- **Open blocks**: Still being built, may change as more content arrives
+
+Blocks close when the parser encounters content that definitively ends them, such as:
+- A blank line after a paragraph
+- A closing fence for a code block
+- New block-level content that can't continue the current block
+
+### Internal implementation
+
+The parser uses an `isClosed` flag on each internal block node to track state (see `markdown-parser.ts:42-44`):
+
+```typescript
+if (!stream) {
+  // Close the latest spine of the root node
+  closeRightmostPath(this.root);
+}
+```
+
+When streaming is disabled, the `closeRightmostPath` function walks the rightmost child chain and marks all open blocks as closed before returning.
+
+## Basic usage
+
+<Tabs>
+  <Tab title="Complete parsing">
+    ```typescript
+    import { MarkdownParser } from "markdown-parser";
+
+    const parser = new MarkdownParser();
+
+    // Parse complete markdown (streaming: false by default)
+    const nodes = parser.parse("# Hello World\nThis is a paragraph.");
+    // Returns:
+    // [
+    //   { type: "heading", level: 1, children: [...] },
+    //   { type: "paragraph", children: [...] }
+    // ]
+    ```
+  </Tab>
+  <Tab title="Streaming mode">
+    ```typescript
+    import { MarkdownParser } from "markdown-parser";
+
+    const parser = new MarkdownParser();
+
+    // First chunk - heading is closed, paragraph still open
+    const nodes1 = parser.parse("# Hello World\nThis", { stream: true });
+    // Returns: [{ type: "heading", level: 1, children: [...] }]
+
+    // Second chunk - first paragraph closes, second still open
+    const nodes2 = parser.parse(" is a paragraph\n\nThis is", { stream: true });
+    // Returns: [{ type: "paragraph", children: [...] }]
+
+    // Final chunk - close all remaining blocks
+    const nodes3 = parser.parse(" another.\n", { stream: false });
+    // Returns: [{ type: "paragraph", children: [...] }]
+    ```
+  </Tab>
+</Tabs>
+
+## When to use streaming
+
+<CardGroup cols={2}>
+  <Card title="LLM outputs" icon="brain">
+    Process AI-generated markdown as it streams from the model, providing real-time rendering
+  </Card>
+  <Card title="Network streams" icon="wifi">
+    Parse markdown content arriving over HTTP streams or WebSockets without buffering
+  </Card>
+  <Card title="Large files" icon="file">
+    Process large markdown files chunk by chunk to reduce memory usage
+  </Card>
+  <Card title="Real-time editing" icon="pen">
+    Update parsed output as users type without re-parsing the entire document
+  </Card>
+</CardGroup>
+
+## Block closure rules
+
+Different block types close under different conditions:
+
+<AccordionGroup>
+  <Accordion title="Paragraphs and tables">
+    Close when encountering:
+    - A blank line
+    - The start of another block element (heading, code block, etc.)
+
+    ```typescript
+    // markdown-parser.ts:181-195
+    if (child.type === "paragraph" || child.type === "table") {
+      if (isLineEmpty(line)) {
+        child.isClosed = true;
+        return;
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Fenced code blocks">
+    Close when encountering a closing fence with the same marker and at least as many characters:
+
+    ```typescript
+    // markdown-parser.ts:126-139
+    if (child.type === "fenced-code-block") {
+      if (isCodeFenceEnd(line, { marker, numOfMarkers })) {
+        child.isClosed = true;
+        return;
+      }
+      child.lines.push(sliceLeadingIndent(line, child.indentLevel));
+      return;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Indented code blocks">
+    Close when encountering a non-indented, non-empty line:
+
+    ```typescript
+    // markdown-parser.ts:142-157
+    if (child.type === "indented-code-block") {
+      if (isIndentedCodeLine(line)) {
+        child.lines.push(sliceLeadingIndent(line, 4));
+        return;
+      } else if (isLineEmpty(line)) {
+        child.lines.push("");
+        return;
+      }
+      child.isClosed = true;
+      break;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="HTML blocks">
+    Close based on their specific end pattern or blank line interruption:
+
+    ```typescript
+    // markdown-parser.ts:159-178
+    if (child.type === "html-block") {
+      if (child.canBeInterruptedByBlankLine && isLineEmpty(line)) {
+        child.isClosed = true;
+        return;
+      }
+      if (child.endPattern?.test(line.trim())) {
+        child.isClosed = true;
+        return;
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Headings and thematic breaks">
+    Always closed immediately upon creation (single-line elements):
+
+    ```typescript
+    // markdown-parser.ts:252-253
+    {
+      type: "heading",
+      isClosed: true,
+      // ...
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Link reference definitions
+
+<Warning>
+When streaming is enabled, link references may not resolve immediately if their definition arrives in a later chunk.
+</Warning>
+
+From the README:
+
+> CommonMark specification allows link reference definitions to appear after the links that use them. Therefore, when streaming is enabled, it is important to consider that a link reference might not resolve, since its definition could arrive in a later chunk of the input.
+
+The parser only processes reference definitions for finalized blocks (see `markdown-parser.ts:519-553`):
+
+```typescript
+private parseReferenceLinkDefinitions(parent) {
+  for (let i = 0; i < parent.children.length; i++) {
+    const block = parent.children[i];
+    
+    // Only parse closed/finalized blocks
+    if (!block.isClosed) break;
+    
+    if (block.type === "paragraph") {
+      const result = parseLinkReferenceDefinitions(block.lines);
+      for (const definition of result.definitions) {
+        if (!this.referenceDefinitions.has(label)) {
+          this.referenceDefinitions.set(label, { href, title });
+        }
+      }
+    }
+  }
+}
+```
+
+## State management
+
+The parser maintains state across streaming calls using:
+
+1. **Root node**: Contains all parsed blocks (see `markdown-parser.ts:13-18`)
+2. **Next node index**: Tracks which blocks have been emitted (see `markdown-parser.ts:19`)
+3. **Reference definitions**: Stores link references across chunks (see `markdown-parser.ts:20-21`)
+4. **Line splitter**: Handles line boundaries across chunks (see `markdown-parser.ts:13`)
+
+```typescript
+export class MarkdownParser {
+  private splitter = new LineSplitter();
+  private root: RootNode_internal = {
+    type: "root",
+    children: [],
+    parent: null,
+  };
+  private nextNodeIndex = 0;
+  private referenceDefinitions: Map<string, { href: string; title?: string }> = new Map();
+}
+```
+
+<Tip>
+The parser only returns blocks that have been fully finalized since the last call, preventing duplicate emissions.
+</Tip>
+
+## Performance considerations
+
+**Memory usage**: Streaming mode keeps internal state for open blocks, but emits and discards closed blocks, preventing unbounded memory growth.
+
+**Latency**: Blocks are emitted as soon as they close, minimizing delay between input and output.
+
+**Incremental processing**: The line-by-line parsing approach (see `markdown-parser.ts:25-27`) ensures minimal reprocessing:
+
+```typescript
+for (const line of this.splitter.split(input, { stream })) {
+  this.parseLine(line.replace(/\0/g, "\uFFFD"));
+}
+```
+
+## Best practices
+
+<Steps>
+  <Step title="Create a single parser instance">
+    Reuse the same `MarkdownParser` instance across streaming calls to maintain state:
+
+    ```typescript
+    const parser = new MarkdownParser();
+    
+    // Multiple streaming calls reuse the same parser
+    stream.on('data', (chunk) => {
+      const nodes = parser.parse(chunk, { stream: true });
+      renderNodes(nodes);
+    });
+    ```
+  </Step>
+
+  <Step title="Finalize with stream: false">
+    Always call with `stream: false` at the end to close remaining open blocks:
+
+    ```typescript
+    stream.on('end', () => {
+      const finalNodes = parser.parse("", { stream: false });
+      renderNodes(finalNodes);
+    });
+    ```
+  </Step>
+
+  <Step title="Handle partial references">
+    Be aware that link references may not resolve until their definition is parsed:
+
+    ```typescript
+    // Chunk 1: [link][ref]
+    // -> Link may not resolve yet
+    
+    // Chunk 2: [ref]: https://example.com
+    // -> Previous link now resolves
+    ```
+  </Step>
+</Steps>

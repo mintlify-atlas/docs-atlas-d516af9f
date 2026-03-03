@@ -1,0 +1,214 @@
+---
+title: Basic parsing
+description: Learn how to parse markdown text into a structured AST with the MarkdownParser class
+---
+
+The `MarkdownParser` class converts markdown text into a structured, fully-typed Abstract Syntax Tree (AST) following the [CommonMark](https://commonmark.org/) specification.
+
+## Installation
+
+Install the markdown-parser package:
+
+```bash
+npm install markdown-parser
+```
+
+## Creating a parser instance
+
+Start by importing and instantiating the `MarkdownParser` class:
+
+```typescript
+import { MarkdownParser } from "markdown-parser";
+
+const parser = new MarkdownParser();
+```
+
+<Note>
+The parser instance maintains internal state for streaming operations. Create a new instance for each independent parsing session.
+</Note>
+
+## Parsing complete markdown
+
+Use the `parse()` method to convert markdown text into an array of block nodes:
+
+```typescript
+const nodes = parser.parse("# Hello World\nThis is a paragraph.");
+
+console.log(nodes);
+// [
+//   { type: "heading", level: 1, children: [{ type: "text", text: "Hello World" }] },
+//   { type: "paragraph", children: [{ type: "text", text: "This is a paragraph." }] }
+// ]
+```
+
+## Understanding the AST structure
+
+The parser returns an array of `BlockNode` objects. Each node has a `type` property and type-specific fields:
+
+<CodeGroup>
+
+```typescript Headings
+const nodes = parser.parse("## Level 2 Heading");
+// [{ type: "heading", level: 2, children: [...] }]
+```
+
+```typescript Paragraphs
+const nodes = parser.parse("This is a simple paragraph.");
+// [{ type: "paragraph", children: [...] }]
+```
+
+```typescript Code blocks
+const nodes = parser.parse("```javascript\nconsole.log('hello');\n```");
+// [{ type: "code-block", content: "console.log('hello');\n", info: "javascript" }]
+```
+
+</CodeGroup>
+
+## Working with inline nodes
+
+Block nodes like paragraphs and headings contain inline nodes in their `children` array:
+
+```typescript
+const markdown = "This is **bold** and *italic* text.";
+const nodes = parser.parse(markdown);
+
+const paragraph = nodes[0];
+// {
+//   type: "paragraph",
+//   children: [
+//     { type: "text", text: "This is " },
+//     { type: "strong", children: [{ type: "text", text: "bold" }] },
+//     { type: "text", text: " and " },
+//     { type: "emphasis", children: [{ type: "text", text: "italic" }] },
+//     { type: "text", text: " text." }
+//   ]
+// }
+```
+
+## Parsing complex structures
+
+The parser handles nested structures like blockquotes and lists:
+
+<Steps>
+
+<Step title="Parse blockquotes">
+
+```typescript
+const markdown = "> This is a quote\n> with multiple lines";
+const nodes = parser.parse(markdown);
+
+// [{ type: "blockquote", children: [{ type: "paragraph", ... }] }]
+```
+
+</Step>
+
+<Step title="Parse lists">
+
+```typescript
+const markdown = `
+1. First item
+2. Second item
+   - Nested bullet
+   - Another bullet
+3. Third item
+`;
+
+const nodes = parser.parse(markdown);
+// [{ type: "list", kind: "ordered", start: 1, items: [...] }]
+```
+
+</Step>
+
+<Step title="Parse tables">
+
+```typescript
+const markdown = `
+| Name | Age |
+| ---- | --- |
+| John | 30  |
+| Jane | 25  |
+`;
+
+const nodes = parser.parse(markdown);
+// [{ type: "table", head: {...}, body: {...}, alignments: [...] }]
+```
+
+</Step>
+
+</Steps>
+
+## Supported markdown features
+
+The parser provides 100% CommonMark support plus GitHub Flavored Markdown (GFM) tables:
+
+### Block nodes
+
+- Heading (ATX and setext style)
+- Paragraph
+- Code block (fenced and indented)
+- Thematic break (horizontal rule)
+- HTML block
+- Blockquote
+- List (ordered and unordered)
+- Link reference definitions
+- Table (GFM)
+
+### Inline nodes
+
+- Text
+- Code span
+- Hard break
+- Soft break
+- HTML (inline)
+- Autolink
+- Link
+- Image
+- Emphasis
+- Strong
+
+## Type safety
+
+The parser returns fully typed nodes, enabling excellent IDE autocomplete and type checking:
+
+```typescript
+import { MarkdownParser, type BlockNode } from "markdown-parser";
+
+const parser = new MarkdownParser();
+const nodes: BlockNode[] = parser.parse("# Title");
+
+// TypeScript knows the structure of each node type
+for (const node of nodes) {
+  if (node.type === "heading") {
+    console.log(`Level ${node.level} heading`);
+    // node.level is typed as 1 | 2 | 3 | 4 | 5 | 6
+  }
+}
+```
+
+<Tip>
+Use TypeScript's type narrowing with the `type` property to safely access type-specific fields on each node.
+</Tip>
+
+## Error handling
+
+The parser follows CommonMark's error recovery principles - invalid markdown is handled gracefully:
+
+```typescript
+// Malformed markdown is parsed as plain text
+const nodes = parser.parse("####### Too many hashes");
+// [{ type: "paragraph", children: [{ type: "text", text: "####### Too many hashes" }] }]
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+
+<Card title="Streaming mode" icon="wave-pulse" href="/guides/streaming-mode">
+  Parse markdown incrementally as it arrives from LLMs
+</Card>
+
+<Card title="React integration" icon="react" href="/guides/react-integration">
+  Render parsed markdown in React applications
+</Card>
+
+</CardGroup>

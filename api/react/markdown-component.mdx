@@ -1,0 +1,163 @@
+---
+title: Markdown component
+description: React server component for rendering markdown content with full CommonMark support
+---
+
+The `Markdown` component is a React server component that renders markdown content into React elements. It parses markdown using the core parser and provides customizable rendering for all markdown node types.
+
+## Basic usage
+
+```tsx
+import { Markdown } from "react-markdown-parser";
+
+export function Article({ content }: { content: string }) {
+  return (
+    <div className="prose">
+      <Markdown content={content} />
+    </div>
+  );
+}
+```
+
+## Props
+
+<ParamField path="content" type="string" required>
+  The markdown content to parse and render. This should be a valid CommonMark-formatted string.
+</ParamField>
+
+<ParamField path="components" type="Partial<MarkdownComponents>">
+  Custom component renderers for markdown nodes. Pass an object with component overrides to customize how specific markdown elements are rendered.
+  
+  See [Custom renderers](/api/react/custom-renderers) for detailed documentation on available component types.
+</ParamField>
+
+## Component behavior
+
+The `Markdown` component:
+
+1. Parses the markdown content using `MarkdownParser`
+2. Renders each parsed node as a React component
+3. Uses default HTML elements unless custom renderers are provided
+4. Applies security measures like URL validation for links and images
+
+<Note>
+  This is a React Server Component and requires `"server-only"` mode. It cannot be used in client components.
+</Note>
+
+## Default rendering
+
+When no custom components are provided, markdown elements render to standard HTML:
+
+| Markdown element | HTML output |
+|-----------------|-------------|
+| Headings | `<h1>` through `<h6>` |
+| Paragraphs | `<p>` |
+| Lists | `<ul>` and `<ol>` with `<li>` |
+| Code blocks | `<pre>` |
+| Inline code | `<code>` |
+| Links | `<a>` with URL validation |
+| Images | `<img>` with URL validation |
+| Blockquotes | `<blockquote>` |
+| Tables | `<table>` with `<thead>` and `<tbody>` |
+| Emphasis | `<em>` |
+| Strong | `<strong>` |
+| Thematic break | `<hr>` |
+| Hard break | `<br>` |
+
+## Security features
+
+The component includes built-in security measures:
+
+- **URL validation**: Links and images are validated to prevent XSS attacks
+- **Safe protocols**: Only safe URL protocols are allowed (blocks `javascript:`, `vbscript:`, `file:`)
+- **Data URLs**: Only image data URLs with safe MIME types are permitted (`image/gif`, `image/png`, `image/jpeg`, `image/webp`)
+- **HTML escaping**: URLs are HTML-escaped to prevent injection attacks
+
+<Warning>
+  The component passes through HTML blocks and inline HTML as-is. Be careful when rendering untrusted markdown that may contain raw HTML.
+</Warning>
+
+## Examples
+
+### Basic article renderer
+
+```tsx
+import { Markdown } from "react-markdown-parser";
+
+export function BlogPost({ markdown }: { markdown: string }) {
+  return (
+    <article className="prose lg:prose-xl">
+      <Markdown content={markdown} />
+    </article>
+  );
+}
+```
+
+### With syntax highlighting
+
+```tsx
+import { Markdown } from "react-markdown-parser";
+import { highlight } from "./syntax-highlighter";
+
+export function CodeArticle({ content }: { content: string }) {
+  return (
+    <Markdown
+      content={content}
+      components={{
+        CodeBlock: ({ content, info }) => {
+          const highlighted = info ? highlight(content, info) : content;
+          return (
+            <pre data-lang={info}>
+              <code dangerouslySetInnerHTML={{ __html: highlighted }} />
+            </pre>
+          );
+        },
+      }}
+    />
+  );
+}
+```
+
+### With custom link handling
+
+```tsx
+import { Markdown } from "react-markdown-parser";
+import Link from "next/link";
+
+export function DocumentationPage({ markdown }: { markdown: string }) {
+  return (
+    <Markdown
+      content={markdown}
+      components={{
+        Link: ({ href, children }) => {
+          // Use Next.js Link for internal links
+          if (href.startsWith("/")) {
+            return <Link href={href}>{children}</Link>;
+          }
+          // External links open in new tab
+          return (
+            <a href={href} target="_blank" rel="noopener noreferrer">
+              {children}
+            </a>
+          );
+        },
+      }}
+    />
+  );
+}
+```
+
+## Type definitions
+
+The component accepts the following TypeScript types:
+
+```typescript
+interface MarkdownProps {
+  content: string;
+  components?: Partial<MarkdownComponents>;
+}
+
+type MarkdownComponents = BlockNodeComponents & InlineNodeComponents;
+```
+
+See [Custom renderers](/api/react/custom-renderers) for complete type definitions of all available component types.

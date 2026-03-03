@@ -1,0 +1,659 @@
+---
+title: Node types
+description: Understand the block and inline node type system used by the parser's AST
+---
+
+## Overview
+
+The parser generates a typed Abstract Syntax Tree (AST) with two main categories of nodes: **block nodes** (structural elements) and **inline nodes** (text-level formatting). All node types follow the CommonMark specification.
+
+<Info>
+The parser exports two main types: `BlockNode` for structural elements and `InlineNode` for inline content. These are fully typed for TypeScript users.
+</Info>
+
+## Node hierarchy
+
+Block nodes form the document structure and can contain inline nodes as children:
+
+```
+BlockNode[]                    ← Document root (array of blocks)
+  ├─ BlockNode                 ← Structural elements
+  │   └─ InlineNode[]          ← Text-level formatting
+  │       └─ InlineNode        ← Nested formatting
+  └─ BlockNode (containers)
+      └─ BlockNode[]           ← Nested blocks
+```
+
+## Block nodes
+
+Block nodes represent document structure and layout. They are defined in `markdown-parser.ts:840-849`.
+
+### Leaf blocks
+
+Leaf blocks cannot contain other block elements:
+
+<Tabs>
+  <Tab title="Heading">
+    ATX-style (1-6 # characters) or Setext-style (underlined with = or -):
+
+    ```typescript
+    {
+      type: "heading",
+      level: 1 | 2 | 3 | 4 | 5 | 6,
+      children: InlineNode[]
+    }
+    ```
+
+    **Internal representation** (`markdown-parser.ts:753-759`):
+    ```typescript
+    type HeadingNode_internal = {
+      type: "heading";
+      level: 1 | 2 | 3 | 4 | 5 | 6;
+      content: string;
+      isClosed: true; // Always closed immediately
+      parent: RootNode_internal | BlockquoteNode_internal | ListItemNode_internal;
+    };
+    ```
+
+    **Example**:
+    ```markdown
+    # Top level heading
+    ## Second level
+    ```
+  </Tab>
+
+  <Tab title="Paragraph">
+    Consecutive lines of text:
+
+    ```typescript
+    {
+      type: "paragraph",
+      children: InlineNode[]
+    }
+    ```
+
+    **Internal representation** (`markdown-parser.ts:746-751`):
+    ```typescript
+    type ParagraphNode_internal = {
+      type: "paragraph";
+      lines: string[];
+      isClosed: boolean;
+      parent: RootNode_internal | BlockquoteNode_internal | ListItemNode_internal;
+    };
+    ```
+
+    **Conversion** (`markdown-parser.ts:573-579`):
+    ```typescript
+    case "paragraph": {
+      return {
+        type: "paragraph",
+        children: parseInline(block.lines.join("\n").trim(), {
+          referenceDefinitions: this.referenceDefinitions,
+        }),
+      };
+    }
+    ```
+
+    **Example**:
+    ```markdown
+    This is a paragraph
+    that spans multiple lines.
+    ```
+  </Tab>
+
+  <Tab title="Code block">
+    Fenced (with ``` or ~~~) or indented (4 spaces):
+
+    ```typescript
+    {
+      type: "code-block",
+      content: string,
+      info?: string  // Language identifier for fenced blocks
+    }
+    ```
+
+    **Internal representations**:
+
+    Fenced (`markdown-parser.ts:761-770`):
+    ```typescript
+    type FencedCodeBlockNode_internal = {
+      type: "fenced-code-block";
+      indentLevel: number;
+      info?: string;
+      numOfMarkers: number;
+      marker: "~" | "`";
+      lines: string[];
+      isClosed: boolean;
+      parent: RootNode_internal | BlockquoteNode_internal | ListItemNode_internal;
+    };
+    ```
+
+    Indented (`markdown-parser.ts:772-777`):
+    ```typescript
+    type IndentedCodeNode_internal = {
+      type: "indented-code-block";
+      lines: string[];
+      isClosed: boolean;
+      parent: RootNode_internal | BlockquoteNode_internal | ListItemNode_internal;
+    };
+    ```
+
+    **Example**:
+    ```markdown
+    ```typescript
+    const parser = new MarkdownParser();
+    ```
+    ```
+  </Tab>
+
+  <Tab title="Thematic break">
+    Horizontal rule (---, ***, or ___):
+
+    ```typescript
+    {
+      type: "thematic-break"
+    }
+    ```
+
+    **Internal representation** (`markdown-parser.ts:779-783`):
+    ```typescript
+    type ThematicBreakNode_internal = {
+      type: "thematic-break";
+      isClosed: true;
+      parent: RootNode_internal | BlockquoteNode_internal | ListItemNode_internal;
+    };
+    ```
+
+    **Example**:
+    ```markdown
+    ---
+    ```
+  </Tab>
+
+  <Tab title="HTML block">
+    Raw HTML content:
+
+    ```typescript
+    {
+      type: "html-block",
+      content: string
+    }
+    ```
+
+    **Internal representation** (`markdown-parser.ts:785-792`):
+    ```typescript
+    type HtmlBlockNode_internal = {
+      type: "html-block";
+      endPattern?: RegExp;
+      canBeInterruptedByBlankLine: boolean;
+      lines: string[];
+      isClosed: boolean;
+      parent: RootNode_internal | BlockquoteNode_internal | ListItemNode_internal;
+    };
+    ```
+
+    **Example**:
+    ```markdown
+    <div class="custom">
+      <p>Raw HTML</p>
+    </div>
+    ```
+  </Tab>
+</Tabs>
+
+### Container blocks
+
+Container blocks can contain other block elements:
+
+<Tabs>
+  <Tab title="Blockquote">
+    Nested quotations (lines starting with >):
+
+    ```typescript
+    {
+      type: "blockquote",
+      children: BlockNode[]
+    }
+    ```
+
+    **Internal representation** (`markdown-parser.ts:794-799`):
+    ```typescript
+    type BlockquoteNode_internal = {
+      type: "blockquote";
+      children: Array<BlockNode_internal>;
+      isClosed: boolean;
+      parent: RootNode_internal | BlockquoteNode_internal | ListItemNode_internal;
+    };
+    ```
+
+    **Example**:
+    ```markdown
+    > This is a quote
+    > that spans lines
+    >>
+    >> Nested quote
+    ```
+  </Tab>
+
+  <Tab title="List">
+    Ordered (1. 2. 3.) or unordered (- * +):
+
+    ```typescript
+    // Ordered list
+    {
+      type: "list",
+      kind: "ordered",
+      start: number,
+      tight: boolean,
+      items: Array<{
+        children: BlockNode[]
+      }>
+    }
+
+    // Unordered list
+    {
+      type: "list",
+      kind: "unordered",
+      marker: string,
+      tight: boolean,
+      items: Array<{
+        children: BlockNode[]
+      }>
+    }
+    ```
+
+    **Internal representation** (`markdown-parser.ts:801-823`):
+    ```typescript
+    type ListNode_internal = {
+      type: "list";
+      children: Array<ListItemNode_internal>;
+      numOfColumns: number;
+      isClosed: boolean;
+      isTight: boolean;
+      parent: RootNode_internal | BlockquoteNode_internal | ListItemNode_internal;
+    } & (
+      | {
+          kind: "ordered";
+          start: number;
+          delimiter: "." | ")";
+        }
+      | { kind: "unordered"; marker: string }
+    );
+
+    type ListItemNode_internal = {
+      type: "list-item";
+      children: Array<BlockNode_internal>;
+      isClosed: boolean;
+      hasPendingBlankLine: boolean;
+      parent: ListNode_internal;
+    };
+    ```
+
+    **Tight vs loose**: Lists are tight when items have no blank lines between them:
+    ```typescript
+    // markdown-parser.ts:198-215
+    if (lastMatchedNode.type === "list-item" && lastMatchedNode.hasPendingBlankLine) {
+      lastMatchedNode.parent.isTight = false;
+    }
+    ```
+
+    **Example**:
+    ```markdown
+    1. First item
+    2. Second item
+       - Nested bullet
+       - Another bullet
+    ```
+  </Tab>
+
+  <Tab title="Table">
+    GFM-style tables with alignment:
+
+    ```typescript
+    {
+      type: "table",
+      head: {
+        cells: Array<{
+          align: "left" | "right" | "center" | undefined,
+          children: InlineNode[]
+        }>
+      },
+      body: {
+        rows: Array<{
+          cells: Array<{
+            align: "left" | "right" | "center" | undefined,
+            children: InlineNode[]
+          }>
+        }>
+      }
+    }
+    ```
+
+    **Internal representation** (`markdown-parser.ts:825-832`):
+    ```typescript
+    type TableNode_internal = {
+      type: "table";
+      alignments: Array<"left" | "right" | "center" | undefined>;
+      head: { cells: string[] };
+      body: { rows: Array<{ cells: string[] }> };
+      isClosed: boolean;
+      parent: RootNode_internal | BlockquoteNode_internal | ListItemNode_internal;
+    };
+    ```
+
+    **Example**:
+    ```markdown
+    | Left | Center | Right |
+    | :--- | :----: | ----: |
+    | A    | B      | C     |
+    ```
+  </Tab>
+</Tabs>
+
+## Inline nodes
+
+Inline nodes represent text-level formatting. They are defined in `inline-parser.ts:580-589`.
+
+<Tabs>
+  <Tab title="Text">
+    Plain text content:
+
+    ```typescript
+    {
+      type: "text",
+      text: string
+    }
+    ```
+
+    **Interface** (`inline-parser.ts:519-522`):
+    ```typescript
+    interface TextNode {
+      type: "text";
+      text: string;
+    }
+    ```
+
+    Adjacent text nodes are merged (`inline-parser.ts:645-664`):
+    ```typescript
+    function mergeAdjacentTextNodes(nodes: Array<InlineNode>): Array<InlineNode> {
+      const result: Array<InlineNode> = [];
+      for (const node of nodes) {
+        if (node.type === "text") {
+          const lastNode = result[result.length - 1];
+          if (lastNode?.type === "text") {
+            lastNode.text += node.text;
+          } else {
+            result.push(node);
+          }
+        }
+      }
+      return result;
+    }
+    ```
+  </Tab>
+
+  <Tab title="Emphasis & Strong">
+    Italic (*text* or _text_) and bold (**text** or __text__):
+
+    ```typescript
+    // Emphasis (italic)
+    {
+      type: "emphasis",
+      children: InlineNode[]
+    }
+
+    // Strong (bold)
+    {
+      type: "strong",
+      children: InlineNode[]
+    }
+    ```
+
+    **Interfaces** (`inline-parser.ts:532-540`):
+    ```typescript
+    interface StrongNode {
+      type: "strong";
+      children: Array<InlineNode>;
+    }
+
+    interface EmphasisNode {
+      type: "emphasis";
+      children: Array<InlineNode>;
+    }
+    ```
+
+    **Delimiter matching**: Uses left/right flanking rules (`inline-parser.ts:131-154`):
+    ```typescript
+    const isLeftFlanking =
+      !isNextCharacterWhitespace &&
+      (!isNextCharacterPunctuation ||
+        isPreviousCharacterWhitespace ||
+        isPreviousCharacterPunctuation);
+
+    const isRightFlanking =
+      !isPreviousCharacterWhitespace &&
+      (!isPreviousCharacterPunctuation ||
+        isNextCharacterWhitespace ||
+        isNextCharacterPunctuation);
+    ```
+  </Tab>
+
+  <Tab title="Code span">
+    Inline code (`code`):
+
+    ```typescript
+    {
+      type: "code-span",
+      text: string
+    }
+    ```
+
+    **Interface** (`inline-parser.ts:514-517`):
+    ```typescript
+    interface CodeSpanNode {
+      type: "code-span";
+      text: string;
+    }
+    ```
+
+    **Parsing logic** (`inline-parser.ts:69-110`): Matches opening and closing backticks, strips surrounding spaces if both present.
+  </Tab>
+
+  <Tab title="Link & Image">
+    Links [text](url) and images ![alt](url):
+
+    ```typescript
+    // Link
+    {
+      type: "link",
+      href: string,
+      title?: string,
+      children: InlineNode[]  // Cannot contain other links
+    }
+
+    // Image
+    {
+      type: "image",
+      href: string,
+      title?: string,
+      children: InlineNode[]  // Alt text
+    }
+    ```
+
+    **Interfaces** (`inline-parser.ts:542-554`):
+    ```typescript
+    interface LinkNode {
+      type: "link";
+      href: string;
+      title?: string;
+      children: Array<InlineNode>;
+    }
+
+    interface ImageNode {
+      type: "image";
+      href: string;
+      title?: string;
+      children: Array<InlineNode>;
+    }
+    ```
+
+    **Link nesting prevention** (`inline-parser.ts:288-295`):
+    ```typescript
+    // Links cannot contain other links
+    if (openerBracket.marker === "[") {
+      for (const bracket of brackets) {
+        if (bracket.marker === "[") {
+          bracket.isActive = false;
+        }
+      }
+    }
+    ```
+
+    Supports inline links, reference links, and autolinks.
+  </Tab>
+
+  <Tab title="Line breaks">
+    Hard breaks (2+ spaces or backslash before newline) and soft breaks (single newline):
+
+    ```typescript
+    // Hard break
+    {
+      type: "hardbreak"
+    }
+
+    // Soft break
+    {
+      type: "softbreak"
+    }
+    ```
+
+    **Interfaces** (`inline-parser.ts:524-530`):
+    ```typescript
+    interface HardBreakNode {
+      type: "hardbreak";
+    }
+
+    interface SoftBreakNode {
+      type: "softbreak";
+    }
+    ```
+
+    **Detection** (`inline-parser.ts:14-43`): Counts preceding spaces to determine break type.
+  </Tab>
+
+  <Tab title="HTML">
+    Inline HTML tags:
+
+    ```typescript
+    {
+      type: "html",
+      content: string
+    }
+    ```
+
+    **Interface** (`inline-parser.ts:556-559`):
+    ```typescript
+    interface HtmlTagNode {
+      type: "html";
+      content: string;
+    }
+    ```
+
+    **Pattern matching** (`inline-parser.ts:1326-1340`): Uses regex to match valid HTML tags.
+  </Tab>
+</Tabs>
+
+## Type exports
+
+The parser exports TypeScript types from `index.ts:1-5`:
+
+```typescript
+export type { InlineNode } from "./inline-parser";
+export {
+  type BlockNode,
+  MarkdownParser,
+} from "./markdown-parser";
+```
+
+## Working with the AST
+
+<Tabs>
+  <Tab title="Traversing nodes">
+    Recursively walk the tree:
+
+    ```typescript
+    function walkNodes(nodes: BlockNode[], visitor: (node: BlockNode) => void) {
+      for (const node of nodes) {
+        visitor(node);
+        
+        if (node.type === "blockquote" || node.type === "list") {
+          if (node.type === "list") {
+            for (const item of node.items) {
+              walkNodes(item.children, visitor);
+            }
+          } else {
+            walkNodes(node.children, visitor);
+          }
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="Type narrowing">
+    Use discriminated unions for type safety:
+
+    ```typescript
+    function processNode(node: BlockNode) {
+      switch (node.type) {
+        case "heading":
+          // node.level is accessible
+          console.log(`Heading level ${node.level}`);
+          break;
+        case "list":
+          if (node.kind === "ordered") {
+            // node.start is accessible
+            console.log(`List starts at ${node.start}`);
+          }
+          break;
+        case "code-block":
+          // node.info is accessible
+          console.log(`Language: ${node.info || 'none'}`);
+          break;
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="Extracting text">
+    Get plain text from inline nodes:
+
+    ```typescript
+    function extractText(nodes: InlineNode[]): string {
+      return nodes.map(node => {
+        switch (node.type) {
+          case "text":
+          case "code-span":
+            return node.text;
+          case "emphasis":
+          case "strong":
+          case "link":
+          case "image":
+            return extractText(node.children);
+          case "hardbreak":
+          case "softbreak":
+            return " ";
+          case "html":
+            return ""; // Strip HTML
+          default:
+            return "";
+        }
+      }).join("");
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+All node types follow the CommonMark 0.31.2 specification. The parser's implementation closely mirrors the reference implementation structure.
+</Note>

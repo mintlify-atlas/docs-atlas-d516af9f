@@ -1,0 +1,706 @@
+---
+title: CommonMark compliance
+description: Learn about the parser's 100% CommonMark specification support and GFM table extensions
+---
+
+## Overview
+
+The parser provides complete support for the [CommonMark 0.31.2 specification](https://spec.commonmark.org/0.31.2/) with additional support for GitHub Flavored Markdown (GFM) tables. The implementation closely follows the structure of the reference implementation.
+
+<Info>
+CommonMark is a strongly specified, unambiguous syntax for Markdown. It resolves edge cases and ambiguities found in the original Markdown specification.
+</Info>
+
+## Implementation approach
+
+From the README:
+
+> The implementation is inspired by various other markdown parsers, including [commonmark.js](https://github.com/commonmark/commonmark.js), [markdown-it](https://github.com/markdown-it/markdown-it), and [marked.js](https://github.com/markedjs/marked). In fact, the implementation is structurally very similar to how commonmark.js goes about parsing.
+
+The parser uses a line-by-line approach with state management for container blocks, matching the CommonMark reference implementation's design.
+
+## Block-level elements
+
+All CommonMark block elements are fully supported:
+
+<CardGroup cols={2}>
+  <Card title="Leaf blocks" icon="file">
+    - ATX headings (# to ######)
+    - Setext headings (underlined)
+    - Indented code blocks
+    - Fenced code blocks
+    - HTML blocks
+    - Link reference definitions
+    - Paragraphs
+    - Thematic breaks
+  </Card>
+  <Card title="Container blocks" icon="box">
+    - Block quotes
+    - List items (ordered and unordered)
+    - Tight and loose lists
+  </Card>
+</CardGroup>
+
+### ATX headings
+
+Supports 1-6 levels with optional closing sequence (`markdown-parser.ts:1232-1309`):
+
+```typescript
+function parseATXHeading(
+  line: string,
+): { level: 1 | 2 | 3 | 4 | 5 | 6; content: string } | null {
+  // Must not be indented more than 3 spaces
+  if (isIndentedCodeLine(line)) return null;
+  
+  line = line.trim();
+  if (line.charAt(0) !== "#") return null;
+  
+  // Count consecutive # characters (max 6)
+  let numOfOpeningHashes: 1 | 2 | 3 | 4 | 5 | 6 = 1 as 1 | 2 | 3 | 4 | 5 | 6;
+  while (numOfOpeningHashes < line.length && line.charAt(numOfOpeningHashes) === "#") {
+    numOfOpeningHashes++;
+  }
+  if (numOfOpeningHashes > 6) return null;
+  
+  // Must be followed by space/tab or end of line
+  if (numOfOpeningHashes < line.length &&
+      line.charAt(numOfOpeningHashes) !== "" &&
+      line.charAt(numOfOpeningHashes) !== "\t") {
+    return null;
+  }
+  
+  // Strip optional closing sequence
+  // ...
+}
+```
+
+**Examples**:
+```markdown
+# Heading 1
+## Heading 2 ##
+### Heading 3 ###############
+####No space (not a heading)
+```
+
+### Fenced code blocks
+
+Supports both backtick and tilde fences (`markdown-parser.ts:882-945`):
+
+```typescript
+function parseCodeFenceStart(line: string): {
+  indentLevel: number;
+  numOfMarkers: number;
+  marker: "~" | "`";
+  info: string | undefined;
+} | null {
+  const indentColumns = getLeadingNonspaceColumn(line);
+  
+  // Must be indented at most 3 spaces
+  if (indentColumns > 3) return null;
+  
+  line = line.trim();
+  if (line.length < 3) return null;
+  
+  const marker = line.charAt(0);
+  if (marker !== "~" && marker !== "`") return null;
+  
+  // Count markers (minimum 3)
+  let numOfMarkers = 1;
+  while (numOfMarkers < line.length && line.charAt(numOfMarkers) === marker) {
+    numOfMarkers++;
+  }
+  if (numOfMarkers < 3) return null;
+  
+  // For backtick fences, info string cannot contain backticks
+  const info = line.slice(numOfMarkers).trim();
+  if (marker === "`" && info.indexOf("`") >= 0) return null;
+  
+  return { indentLevel: indentColumns, numOfMarkers, marker, info: info || undefined };
+}
+```
+
+**Examples**:
+```markdown
+```javascript
+const x = 1;
+```
+
+~~~ruby
+puts "Hello"
+~~~
+
+```info string can have spaces
+code
+```
+```
+
+### Indented code blocks
+
+Four spaces or one tab creates a code block (`markdown-parser.ts:860-863`):
+
+```typescript
+function isIndentedCodeLine(line: string): boolean {
+  const column = getLeadingNonspaceColumn(line);
+  return column >= 4;
+}
+```
+
+**Tab expansion**: Tabs are expanded to the next multiple of 4 spaces (`markdown-parser.ts:1067-1080`):
+
+```typescript
+function getLeadingNonspaceColumn(line: string): number {
+  let columns = 0;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line.charAt(i);
+    if (ch === " ") {
+      columns += 1;
+    } else if (ch === "\t") {
+      columns += 4 - (columns % 4);  // Tab stops at multiples of 4
+    } else {
+      break;
+    }
+  }
+  return columns;
+}
+```
+
+### Block quotes
+
+Lines starting with > create blockquotes (`markdown-parser.ts:1167-1211`):
+
+```typescript
+function parseBlockquoteLine(line: string): { content: string } | null {
+  if (isIndentedCodeLine(line)) return null;
+  
+  const firstNonspaceIndex = getFirstNonspaceIndex(line);
+  
+  // First non-whitespace must be >
+  if (line.charAt(firstNonspaceIndex) !== ">") return null;
+  
+  let characterIndex = firstNonspaceIndex + 1;
+  let numOfColumns = characterIndex;
+  
+  // Handle tabs and spaces after >
+  while (characterIndex < line.length) {
+    if (line.charAt(characterIndex) === "\t") {
+      numOfColumns += 4 - (numOfColumns % 4);
+      characterIndex++;
+    } else if (line.charAt(characterIndex) === " ") {
+      numOfColumns++;
+      characterIndex++;
+    } else {
+      break;
+    }
+  }
+  
+  // Construct content, consuming optional space after >
+  const content = " ".repeat(numOfColumns - firstNonspaceIndex - 1) + line.slice(characterIndex);
+  if (content.charAt(0) === " ") {
+    return { content: content.slice(1) };
+  }
+  return { content };
+}
+```
+
+**Examples**:
+```markdown
+> Single level
+>
+> Multiple paragraphs
+
+> Level 1
+>> Level 2
+>>> Level 3
+```
+
+### Lists
+
+Supports both ordered and unordered lists with proper nesting (`markdown-parser.ts:383-465`):
+
+**Tight vs loose**: Determined by blank lines between items (`markdown-parser.ts:198-215`):
+
+```typescript
+if (lastMatchedNode.type === "list-item" && lastMatchedNode.hasPendingBlankLine) {
+  lastMatchedNode.parent.isTight = false;
+  let node = lastMatchedNode;
+  while (node !== null) {
+    if (node.type === "list-item") {
+      node.hasPendingBlankLine = false;
+    }
+    node = node.parent;
+  }
+}
+```
+
+**Examples**:
+```markdown
+<!-- Tight list -->
+- Item 1
+- Item 2
+- Item 3
+
+<!-- Loose list -->
+- Item 1
+
+- Item 2
+
+- Item 3
+
+<!-- Nested -->
+1. First
+   - Nested bullet
+   - Another
+2. Second
+```
+
+### Thematic breaks
+
+Three or more -, _, or * characters (`markdown-parser.ts:1126-1165`):
+
+```typescript
+function isSeparator(line: string): boolean {
+  // Must not be indented 4+ spaces
+  if (isIndentedCodeLine(line)) return false;
+  
+  line = line.trim();
+  const marker = line.charAt(0);
+  
+  // Only -, _, and * can create separators
+  if (marker !== "-" && marker !== "_" && marker !== "*") return false;
+  
+  // Count markers (minimum 3)
+  let markerCount = 1;
+  for (let i = 1; i < line.length; i++) {
+    const character = line.charAt(i);
+    if (isSpaceOrTab(character)) continue;  // Spaces/tabs allowed
+    if (character !== marker) return false;
+    markerCount++;
+  }
+  
+  return markerCount >= 3;
+}
+```
+
+**Examples**:
+```markdown
+---
+***
+___
+- - -
+* * * *
+```
+
+## Inline-level elements
+
+All CommonMark inline elements are fully supported:
+
+<Tabs>
+  <Tab title="Text formatting">
+    **Emphasis and strong emphasis** using the CommonMark flanking rules:
+
+    From `inline-parser.ts:131-177`:
+    ```typescript
+    // Left-flanking: can open emphasis
+    const isLeftFlanking =
+      !isNextCharacterWhitespace &&
+      (!isNextCharacterPunctuation ||
+        isPreviousCharacterWhitespace ||
+        isPreviousCharacterPunctuation);
+
+    // Right-flanking: can close emphasis
+    const isRightFlanking =
+      !isPreviousCharacterWhitespace &&
+      (!isPreviousCharacterPunctuation ||
+        isNextCharacterWhitespace ||
+        isNextCharacterPunctuation);
+    ```
+
+    **Rule of three** (`inline-parser.ts:489-500`):
+    ```typescript
+    // When a delimiter can both open and close:
+    // If sum of run lengths is divisible by 3,
+    // they don't match unless both are divisible by 3
+    if (
+      (node.canClose || closer.node.canOpen) &&
+      (node.count + closer.node.count) % 3 === 0 &&
+      (node.count % 3 !== 0 || closer.node.count % 3 !== 0)
+    ) {
+      continue;
+    }
+    ```
+
+    **Examples**:
+    ```markdown
+    *italic* _italic_
+    **bold** __bold__
+    ***bold italic***
+    ```
+  </Tab>
+
+  <Tab title="Code spans">
+    Backtick-delimited inline code:
+
+    From `inline-parser.ts:69-110`:
+    ```typescript
+    const numOfOpeningBackticks = getNumOfConsecutiveCharacters(input, {
+      characters: ["`"],
+      startIndex: characterCursor,
+    });
+    
+    // Find matching closing backticks
+    let closerIndex = openerIndex;
+    while (closerIndex < input.length) {
+      closerIndex = input.indexOf("`", closerIndex);
+      if (closerIndex === -1) break;
+      
+      const numOfClosingBackticks = getNumOfConsecutiveCharacters(input, {
+        characters: ["`"],
+        startIndex: closerIndex,
+      });
+      
+      if (numOfClosingBackticks === numOfOpeningBackticks) {
+        hasClosingBackticks = true;
+        break;
+      }
+      closerIndex += numOfClosingBackticks;
+    }
+    
+    // Strip surrounding spaces if both present
+    if (content[0] === " " && content[content.length - 1] === " ") {
+      if (content.trim().length > 0) {
+        content = content.slice(1, content.length - 1);
+      }
+    }
+    ```
+
+    **Examples**:
+    ```markdown
+    `code`
+    ``code with ` backtick``
+    ``` lots of backticks ```
+    ```
+  </Tab>
+
+  <Tab title="Links and images">
+    **Inline links**:
+    ```markdown
+    [text](url "title")
+    ![alt](image.png)
+    ```
+
+    **Reference links** (`inline-parser.ts:223-274`):
+    ```markdown
+    [text][ref]
+    [text][]
+    [text]
+    
+    [ref]: url "title"
+    ```
+
+    **Autolinks** (`inline-parser.ts:298-332`):
+    ```markdown
+    <http://example.com>
+    <email@example.com>
+    ```
+
+    **Link nesting prevention** (`inline-parser.ts:288-295`):
+    ```typescript
+    // Links cannot contain other links per CommonMark
+    if (openerBracket.marker === "[") {
+      for (const bracket of brackets) {
+        if (bracket.marker === "[") {
+          bracket.isActive = false;
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="Line breaks">
+    **Hard breaks**: Two or more spaces or backslash before newline (`inline-parser.ts:14-43`):
+
+    ```typescript
+    if (marker === "\n") {
+      let numOfPrecedingSpaces = 0;
+      while (true) {
+        const currentIndex = startIndex - numOfPrecedingSpaces - 1;
+        if (currentIndex < 0) break;
+        if (input.charAt(currentIndex) !== " ") break;
+        numOfPrecedingSpaces++;
+      }
+      
+      if (numOfPrecedingSpaces >= 2) {
+        nodes.push({ type: "hardbreak" });
+      } else {
+        nodes.push({ type: "softbreak" });
+      }
+    }
+    ```
+
+    **Examples**:
+    ```markdown
+    Hard break:  
+    (two spaces)
+    
+    Hard break:\
+    (backslash)
+    
+    Soft break:
+    (just newline)
+    ```
+  </Tab>
+
+  <Tab title="HTML and entities">
+    **Raw HTML** (`inline-parser.ts:1326-1340`):
+    ```typescript
+    const HTML_TAG_REGEX = new RegExp(
+      "^(?:" +
+        OPEN_TAG + "|" +
+        CLOSE_TAG + "|" +
+        COMMENT + "|" +
+        PROCESSING + "|" +
+        DECLARATION + "|" +
+        CDATA +
+      ")"
+    );
+    ```
+
+    **HTML entities** (`inline-parser.ts:344-354`):
+    ```typescript
+    const ENTITY_REGEX = /^&(?:#x[a-f0-9]{1,6}|#[0-9]{1,7}|[a-z][a-z0-9]{1,31});/i;
+    
+    const match = input.slice(characterCursor).match(ENTITY_REGEX);
+    if (match !== null) {
+      const entity = match[0];
+      nodes.push({ type: "text", text: decodeHTMLStrict(entity) });
+    }
+    ```
+
+    **Examples**:
+    ```markdown
+    <strong>HTML tags</strong>
+    &lt; &gt; &amp;
+    &#35; &#x1F600;
+    ```
+  </Tab>
+</Tabs>
+
+## Character encoding
+
+### Backslash escapes
+
+ASCII punctuation can be escaped (`inline-parser.ts:708-746`):
+
+```typescript
+function isAsciiPunctuationCharacter(character: string): boolean {
+  switch (character) {
+    case "!": case '"': case "#": case "$": case "%": case "&": case "'":
+    case "(": case ")": case "*": case "+": case ",": case "-": case ".":
+    case "/": case ":": case ";": case "<": case "=": case ">": case "?":
+    case "@": case "[": case "\\": case "]": case "^": case "_": case "`":
+    case "{": case "|": case "}": case "~":
+      return true;
+    default:
+      return false;
+  }
+}
+```
+
+**Examples**:
+```markdown
+\* Not a bullet
+\[Not a link\]
+\\Literal backslash
+```
+
+### URL encoding
+
+URLs are percent-encoded for safety (`inline-parser.ts:1217-1291`):
+
+```typescript
+function encodeUnsafeChars(
+  input: string,
+  allowedChars?: string,
+  keepExistingEscapes?: boolean,
+): string {
+  const DEFAULT_ALLOWED_CHARS = ";/?:@&=+$,-_.!~*'()#";
+  const asciiTable = getAsciiEncodeTable(allowedChars || DEFAULT_ALLOWED_CHARS);
+  
+  // Preserve existing %XX sequences
+  if (keepExistingEscapes && codeUnit === 0x25 && i + 2 < input.length) {
+    const maybeHex = input.slice(i + 1, i + 3);
+    if (/^[0-9a-f]{2}$/i.test(maybeHex)) {
+      encoded += input.slice(i, i + 3);
+      continue;
+    }
+  }
+  
+  // Handle UTF-16 surrogate pairs
+  if (codeUnit >= 0xd800 && codeUnit <= 0xdfff) {
+    // Valid pair or replacement character
+  }
+}
+```
+
+### Unicode handling
+
+Full Unicode support with proper character classification (`inline-parser.ts:748-786`):
+
+```typescript
+const UNICODE_P_REGEX = /[!-#%-*,-/:;?@[-\]_{}...]/; // Punctuation
+const UNICODE_S_REGEX = /[$+<->^`|~...]/;            // Symbols
+
+function isUnicodePunctuationCharacter(character: string): boolean {
+  return UNICODE_P_REGEX.test(character) || UNICODE_S_REGEX.test(character);
+}
+
+function isWhiteSpaceCharacter(character: string): boolean {
+  const code = character.charCodeAt(0);
+  // U+0009 (tab), U+000A (LF), U+000B (VT), U+000C (FF), U+000D (CR)
+  // U+0020 (space), U+00A0 (nbsp), U+1680, U+2000-U+200A, U+202F, U+205F, U+3000
+}
+```
+
+## GFM tables
+
+<Note>
+Tables are a GitHub Flavored Markdown (GFM) extension, not part of core CommonMark. This is the only non-CommonMark feature supported by the parser.
+</Note>
+
+### Table syntax
+
+Tables require a header row and delimiter row (`markdown-parser.ts:1337-1436`):
+
+```typescript
+function parseTableStartLine({
+  firstLine,
+  secondLine,
+}: {
+  firstLine?: string;
+  secondLine?: string;
+}): {
+  alignments: Array<"left" | "right" | "center" | undefined>;
+  head: { cells: string[] };
+} | null {
+  // First line must contain pipes
+  if (firstLine.indexOf("|") === -1) return null;
+  
+  // Second line must be delimiter: :---, :---:, ---:
+  const delimiterCells = secondLine.split("|");
+  const alignments: Array<"left" | "right" | "center" | undefined> = [];
+  
+  for (let i = 0; i < delimiterCells.length; i++) {
+    const cell = delimiterCells[i]?.trim();
+    if (!cell && (i === 0 || i === delimiterCells.length - 1)) continue;
+    if (!/^:?-+:?$/.test(cell)) return null;
+    
+    if (cell.charAt(cell.length - 1) === ":") {
+      alignments.push(cell.charAt(0) === ":" ? "center" : "right");
+    } else if (cell.charAt(0) === ":") {
+      alignments.push("left");
+    } else {
+      alignments.push(undefined);
+    }
+  }
+}
+```
+
+**Escaped pipes**: Pipes can be escaped in cell content (`markdown-parser.ts:1438-1465`):
+
+```typescript
+function parseTableRow(line: string): Array<string> {
+  const cells = line
+    .trim()
+    .split(/(?<!\\)\|/)  // Split on unescaped pipes
+    .map((cell) => cell.replace(/\\\|/g, "|"))  // Unescape \|
+    .map((cell) => cell.trim());
+  
+  // Remove leading/trailing empty cells
+  if (cells[0] === "") cells.shift();
+  if (cells[cells.length - 1] === "") cells.pop();
+  
+  return cells;
+}
+```
+
+**Examples**:
+```markdown
+| Header 1 | Header 2 | Header 3 |
+| :------- | :------: | -------: |
+| Left     | Center   | Right    |
+| A        | B        | C        |
+
+<!-- Escaped pipe -->
+| Code     | Result   |
+| -------- | -------- |
+| a \| b   | Shows pipe |
+
+<!-- Minimal table -->
+Header 1 | Header 2
+--- | ---
+Cell 1 | Cell 2
+```
+
+## Edge cases
+
+The CommonMark spec resolves many ambiguities:
+
+<AccordionGroup>
+  <Accordion title="Precedence rules">
+    Block elements are parsed before inline elements. Within blocks, earlier rules take precedence.
+
+    **Example**:
+    ```markdown
+    # Not a heading (indented 4 spaces -> code block)
+        # This is code
+    
+    <div> HTML blocks take precedence over paragraphs
+    Not a paragraph
+    </div>
+    ```
+  </Accordion>
+
+  <Accordion title="Container continuation">
+    Blockquotes and list items follow specific continuation rules (`markdown-parser.ts:51-196`).
+
+    **Example**:
+    ```markdown
+    > Quote line 1
+    continued (still in quote)
+    
+    Not in quote
+    ```
+  </Accordion>
+
+  <Accordion title="Lazy continuation">
+    Paragraphs in containers can be lazy-continued without markers.
+
+    **Example**:
+    ```markdown
+    > Paragraph starts here
+    and continues without >
+    
+    - List item paragraph
+    continues without bullet
+    ```
+  </Accordion>
+
+  <Accordion title="Indentation and tabs">
+    Tabs expand to 4-space tab stops, not fixed 4-space width.
+
+    **Example**:
+    ```markdown
+    ␣␣⇥X  → column 4 (2 spaces + tab to next stop)
+    ␣␣␣⇥X → column 4 (3 spaces + tab to next stop)
+    ␣⇥X   → column 4 (1 space + tab to next stop)
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Compliance testing
+
+The implementation can be tested against the official CommonMark test suite (spec.json). The parser structure closely follows commonmark.js to ensure spec compliance.
+
+<Tip>
+For detailed edge cases and examples, refer to the [CommonMark specification](https://spec.commonmark.org/0.31.2/) directly.
+</Tip>

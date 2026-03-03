@@ -1,0 +1,110 @@
+---
+title: MarkdownParser
+description: The main parser class for converting markdown text into structured AST nodes
+---
+
+## MarkdownParser class
+
+The `MarkdownParser` class is the core of the markdown-parser library. It parses markdown text into a structured Abstract Syntax Tree (AST) of block and inline nodes following the CommonMark specification.
+
+### Constructor
+
+```typescript
+const parser = new MarkdownParser();
+```
+
+Creates a new parser instance. Each instance maintains its own internal state for reference definitions and parsing position.
+
+## parse()
+
+Parses markdown input and returns an array of block nodes.
+
+```typescript
+parse(input: string, options?: { stream?: boolean }): BlockNode[]
+```
+
+### Parameters
+
+<ParamField path="input" type="string" required>
+  The markdown text to parse
+</ParamField>
+
+<ParamField path="options" type="object">
+  Optional configuration for the parser
+  
+  <Expandable title="properties">
+    <ParamField path="stream" type="boolean" default="false">
+      Enable streaming mode. When `true`, the parser returns only finalized/closed nodes and maintains internal state for subsequent calls. When `false`, all remaining open blocks are finalized before returning.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Returns
+
+<ResponseField name="BlockNode[]" type="array">
+  An array of parsed block-level nodes. See [Block Nodes](/api/block-nodes) for detailed node types.
+</ResponseField>
+
+### Usage
+
+#### Basic parsing
+
+```typescript
+import { MarkdownParser } from 'markdown-parser';
+
+const parser = new MarkdownParser();
+const nodes = parser.parse('# Hello World\n\nThis is a paragraph.');
+
+console.log(nodes);
+// [
+//   { type: 'heading', level: 1, children: [{ type: 'text', text: 'Hello World' }] },
+//   { type: 'paragraph', children: [{ type: 'text', text: 'This is a paragraph.' }] }
+// ]
+```
+
+#### Streaming mode
+
+Streaming mode allows processing markdown incrementally as it arrives:
+
+```typescript
+const parser = new MarkdownParser();
+
+// First chunk
+let nodes = parser.parse('# Heading\n\nFirst ', { stream: true });
+console.log(nodes); // [{ type: 'heading', ... }]
+
+// Second chunk - paragraph is still open
+nodes = parser.parse('paragraph.\n\n', { stream: true });
+console.log(nodes); // [{ type: 'paragraph', ... }]
+
+// Final chunk - finalize remaining blocks
+nodes = parser.parse('', { stream: false });
+console.log(nodes); // Any remaining open blocks
+```
+
+### Supported markdown features
+
+The parser implements full CommonMark 0.31.2 specification including:
+
+- **Block elements**: Headings (ATX and Setext), paragraphs, code blocks (fenced and indented), blockquotes, lists (ordered and unordered), tables (GFM extension), thematic breaks, HTML blocks
+- **Inline elements**: Emphasis, strong emphasis, links (inline and reference), images, code spans, line breaks (hard and soft), HTML tags, autolinks
+- **Advanced features**: Nested blockquotes, nested lists, reference link definitions, table alignment
+
+### Reference link definitions
+
+The parser automatically extracts and processes reference link definitions:
+
+```typescript
+const markdown = `
+[example]: https://example.com "Example Site"
+
+Check out [example] for more info.
+`;
+
+const nodes = parser.parse(markdown);
+// Reference definitions are stored internally and used to resolve links
+```
+
+### CommonMark compliance
+
+This parser is fully compliant with [CommonMark 0.31.2](https://spec.commonmark.org/0.31.2/), ensuring consistent and predictable parsing behavior across different markdown implementations.

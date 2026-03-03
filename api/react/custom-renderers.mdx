@@ -1,0 +1,615 @@
+---
+title: Custom renderers
+description: Customize how markdown nodes are rendered by providing custom React components
+---
+
+The `Markdown` component accepts a `components` prop that allows you to customize how different markdown elements are rendered. You can override any combination of block and inline node renderers.
+
+## Overview
+
+```tsx
+import { Markdown } from "react-markdown-parser";
+
+export function CustomArticle({ content }: { content: string }) {
+  return (
+    <Markdown
+      content={content}
+      components={{
+        CodeBlock: ({ content, info }) => {
+          // Custom code block renderer
+          return (
+            <pre data-lang={info}>
+              <code>{content}</code>
+            </pre>
+          );
+        },
+        Link: ({ href, children }) => {
+          // Custom link renderer
+          return (
+            <a href={href} rel="noreferrer">
+              {children}
+            </a>
+          );
+        },
+      }}
+    />
+  );
+}
+```
+
+## Block node components
+
+Block components render block-level markdown elements. Each receives specific props based on the markdown node type.
+
+### Table
+
+Renders markdown tables with header and body cells.
+
+<ParamField path="head" type="object" required>
+  Table header configuration
+  
+  <ParamField path="head.cells" type="array" required>
+    Array of header cells
+    
+    <ParamField path="head.cells[].children" type="ReactNode" required>
+      Rendered content of the header cell
+    </ParamField>
+    
+    <ParamField path="head.cells[].align" type="'left' | 'right' | 'center' | undefined">
+      Text alignment for the column
+    </ParamField>
+  </ParamField>
+</ParamField>
+
+<ParamField path="body" type="object" required>
+  Table body configuration
+  
+  <ParamField path="body.rows" type="array" required>
+    Array of table rows
+    
+    <ParamField path="body.rows[].cells" type="array" required>
+      Array of cells in this row
+      
+      <ParamField path="body.rows[].cells[].children" type="ReactNode" required>
+        Rendered content of the cell
+      </ParamField>
+      
+      <ParamField path="body.rows[].cells[].align" type="'left' | 'right' | 'center' | undefined">
+        Text alignment for the cell
+      </ParamField>
+    </ParamField>
+  </ParamField>
+</ParamField>
+
+```tsx
+Table: ({ head, body }) => (
+  <table className="custom-table">
+    <thead>
+      <tr>
+        {head.cells.map((cell, i) => (
+          <th key={i} style={{ textAlign: cell.align }}>
+            {cell.children}
+          </th>
+        ))}
+      </tr>
+    </thead>
+    <tbody>
+      {body.rows.map((row, i) => (
+        <tr key={i}>
+          {row.cells.map((cell, j) => (
+            <td key={j} style={{ textAlign: cell.align }}>
+              {cell.children}
+            </td>
+          ))}
+        </tr>
+      ))}
+    </tbody>
+  </table>
+)
+```
+
+### CodeBlock
+
+Renders fenced code blocks.
+
+<ParamField path="content" type="string" required>
+  The raw code content
+</ParamField>
+
+<ParamField path="info" type="string">
+  The info string from the code fence (typically the language identifier)
+</ParamField>
+
+```tsx
+CodeBlock: ({ content, info }) => {
+  const language = info || 'text';
+  return (
+    <pre className={`language-${language}`}>
+      <code>{content}</code>
+    </pre>
+  );
+}
+```
+
+### Blockquote
+
+Renders blockquote elements.
+
+<ParamField path="children" type="ReactNode" required>
+  The rendered child nodes (paragraphs, lists, etc.) inside the blockquote
+</ParamField>
+
+```tsx
+Blockquote: ({ children }) => (
+  <blockquote className="border-l-4 pl-4 italic">
+    {children}
+  </blockquote>
+)
+```
+
+### List
+
+Renders ordered and unordered lists. The props differ based on list type.
+
+**Ordered list props:**
+
+<ParamField path="type" type="'ordered'" required>
+  Indicates this is an ordered list
+</ParamField>
+
+<ParamField path="items" type="array" required>
+  Array of list items
+  
+  <ParamField path="items[].children" type="ReactNode" required>
+    Rendered content of the list item
+  </ParamField>
+</ParamField>
+
+<ParamField path="start" type="number">
+  The starting number for ordered lists (default: 1)
+</ParamField>
+
+**Unordered list props:**
+
+<ParamField path="type" type="'unordered'" required>
+  Indicates this is an unordered list
+</ParamField>
+
+<ParamField path="items" type="array" required>
+  Array of list items
+  
+  <ParamField path="items[].children" type="ReactNode" required>
+    Rendered content of the list item
+  </ParamField>
+</ParamField>
+
+```tsx
+List: (props) => {
+  if (props.type === 'ordered') {
+    return (
+      <ol start={props.start} className="list-decimal">
+        {props.items.map((item, i) => (
+          <li key={i}>{item.children}</li>
+        ))}
+      </ol>
+    );
+  }
+  return (
+    <ul className="list-disc">
+      {props.items.map((item, i) => (
+        <li key={i}>{item.children}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+### Heading
+
+Renders headings from h1 to h6.
+
+<ParamField path="level" type="1 | 2 | 3 | 4 | 5 | 6" required>
+  The heading level
+</ParamField>
+
+<ParamField path="children" type="ReactNode" required>
+  The rendered heading text and inline elements
+</ParamField>
+
+```tsx
+Heading: ({ level, children }) => {
+  const id = slugify(children);
+  const HeadingTag = `h${level}` as const;
+  return (
+    <HeadingTag id={id} className={`heading-${level}`}>
+      {children}
+    </HeadingTag>
+  );
+}
+```
+
+### Paragraph
+
+Renders paragraph elements.
+
+<ParamField path="children" type="ReactNode" required>
+  The rendered inline content of the paragraph
+</ParamField>
+
+```tsx
+Paragraph: ({ children }) => (
+  <p className="my-4 leading-relaxed">
+    {children}
+  </p>
+)
+```
+
+### ThematicBreak
+
+Renders horizontal rules (thematic breaks).
+
+This component receives no props.
+
+```tsx
+ThematicBreak: () => (
+  <hr className="my-8 border-gray-300" />
+)
+```
+
+### HtmlBlock
+
+Renders raw HTML blocks.
+
+<ParamField path="content" type="string" required>
+  The raw HTML content
+</ParamField>
+
+<Warning>
+  Be cautious when rendering HTML blocks from untrusted sources. Consider sanitizing the content.
+</Warning>
+
+```tsx
+HtmlBlock: ({ content }) => (
+  <div dangerouslySetInnerHTML={{ __html: sanitize(content) }} />
+)
+```
+
+## Inline node components
+
+Inline components render inline-level markdown elements within block content.
+
+### Text
+
+Renders plain text nodes.
+
+<ParamField path="text" type="string" required>
+  The text content
+</ParamField>
+
+```tsx
+Text: ({ text }) => <>{text}</>
+```
+
+### CodeSpan
+
+Renders inline code.
+
+<ParamField path="text" type="string" required>
+  The code text
+</ParamField>
+
+```tsx
+CodeSpan: ({ text }) => (
+  <code className="bg-gray-100 px-1 py-0.5 rounded">
+    {text}
+  </code>
+)
+```
+
+### Emphasis
+
+Renders emphasized (italic) text.
+
+<ParamField path="children" type="ReactNode" required>
+  The rendered child inline nodes
+</ParamField>
+
+```tsx
+Emphasis: ({ children }) => (
+  <em className="italic">{children}</em>
+)
+```
+
+### Strong
+
+Renders strong (bold) text.
+
+<ParamField path="children" type="ReactNode" required>
+  The rendered child inline nodes
+</ParamField>
+
+```tsx
+Strong: ({ children }) => (
+  <strong className="font-bold">{children}</strong>
+)
+```
+
+### Link
+
+Renders hyperlinks.
+
+<ParamField path="href" type="string" required>
+  The link destination URL
+</ParamField>
+
+<ParamField path="title" type="string">
+  The optional link title attribute
+</ParamField>
+
+<ParamField path="children" type="ReactNode" required>
+  The rendered link text
+</ParamField>
+
+<Note>
+  The default Link renderer includes URL validation to prevent XSS attacks. If you override this component, ensure you implement similar security measures.
+</Note>
+
+```tsx
+Link: ({ href, title, children }) => {
+  // Internal links use Next.js routing
+  if (href.startsWith('/')) {
+    return <NextLink href={href} title={title}>{children}</NextLink>;
+  }
+  // External links
+  return (
+    <a href={href} title={title} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  );
+}
+```
+
+### Image
+
+Renders images.
+
+<ParamField path="href" type="string" required>
+  The image source URL
+</ParamField>
+
+<ParamField path="alt" type="string" required>
+  The image alt text (extracted from the markdown image text)
+</ParamField>
+
+<ParamField path="title" type="string">
+  The optional image title attribute
+</ParamField>
+
+<Note>
+  The default Image renderer includes URL validation. Ensure custom implementations maintain security.
+</Note>
+
+```tsx
+Image: ({ href, alt, title }) => (
+  <img
+    src={href}
+    alt={alt}
+    title={title}
+    loading="lazy"
+    className="max-w-full h-auto"
+  />
+)
+```
+
+### HardBreak
+
+Renders explicit line breaks.
+
+This component receives no props.
+
+```tsx
+HardBreak: () => <br />
+```
+
+### SoftBreak
+
+Renders soft line breaks (typically converted to spaces).
+
+This component receives no props. The default renderer returns `null`.
+
+```tsx
+SoftBreak: () => <>{' '}</>
+```
+
+### Html
+
+Renders inline HTML.
+
+<ParamField path="content" type="string" required>
+  The raw HTML content
+</ParamField>
+
+<Warning>
+  Be cautious when rendering inline HTML from untrusted sources. Consider sanitizing the content.
+</Warning>
+
+```tsx
+Html: ({ content }) => (
+  <span dangerouslySetInnerHTML={{ __html: sanitize(content) }} />
+)
+```
+
+## Complete example
+
+<Tabs>
+  <Tab title="Syntax highlighting">
+    ```tsx
+    import { Markdown } from "react-markdown-parser";
+    import { highlight } from "highlight.js";
+
+    export function ArticleWithHighlighting({ content }: { content: string }) {
+      return (
+        <Markdown
+          content={content}
+          components={{
+            CodeBlock: ({ content, info }) => {
+              const language = info || "plaintext";
+              const highlighted = highlight.highlight(content, { language });
+              return (
+                <pre className={`hljs language-${language}`}>
+                  <code dangerouslySetInnerHTML={{ __html: highlighted.value }} />
+                </pre>
+              );
+            },
+          }}
+        />
+      );
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Custom styling">
+    ```tsx
+    import { Markdown } from "react-markdown-parser";
+
+    export function StyledArticle({ content }: { content: string }) {
+      return (
+        <Markdown
+          content={content}
+          components={{
+            Heading: ({ level, children }) => {
+              const className = {
+                1: "text-4xl font-bold mt-8 mb-4",
+                2: "text-3xl font-bold mt-6 mb-3",
+                3: "text-2xl font-semibold mt-4 mb-2",
+                4: "text-xl font-semibold mt-3 mb-2",
+                5: "text-lg font-semibold mt-2 mb-1",
+                6: "text-base font-semibold mt-2 mb-1",
+              }[level];
+              const Heading = `h${level}` as const;
+              return <Heading className={className}>{children}</Heading>;
+            },
+            Paragraph: ({ children }) => (
+              <p className="my-4 text-gray-700 leading-relaxed">{children}</p>
+            ),
+            Link: ({ href, children }) => (
+              <a href={href} className="text-blue-600 hover:underline">
+                {children}
+              </a>
+            ),
+            CodeSpan: ({ text }) => (
+              <code className="bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono">
+                {text}
+              </code>
+            ),
+          }}
+        />
+      );
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Link validation">
+    ```tsx
+    import { Markdown } from "react-markdown-parser";
+    import Link from "next/link";
+
+    function isInternalLink(href: string): boolean {
+      return href.startsWith("/") || href.startsWith("#");
+    }
+
+    function isSafeExternalLink(href: string): boolean {
+      try {
+        const url = new URL(href);
+        return ["http:", "https:"].includes(url.protocol);
+      } catch {
+        return false;
+      }
+    }
+
+    export function SecureArticle({ content }: { content: string }) {
+      return (
+        <Markdown
+          content={content}
+          components={{
+            Link: ({ href, title, children }) => {
+              // Internal links use Next.js router
+              if (isInternalLink(href)) {
+                return (
+                  <Link href={href} title={title}>
+                    {children}
+                  </Link>
+                );
+              }
+              
+              // Only render safe external links
+              if (isSafeExternalLink(href)) {
+                return (
+                  <a
+                    href={href}
+                    title={title}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {children}
+                  </a>
+                );
+              }
+              
+              // Unsafe links are rendered as plain text
+              return <span title="Unsafe link removed">{children}</span>;
+            },
+          }}
+        />
+      );
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Type reference
+
+```typescript
+type MarkdownComponents = BlockNodeComponents & InlineNodeComponents;
+
+interface BlockNodeComponents {
+  Table: ComponentType<{
+    head: {
+      cells: {
+        children: ReactNode;
+        align: "left" | "right" | "center" | undefined;
+      }[];
+    };
+    body: {
+      rows: {
+        cells: {
+          children: ReactNode;
+          align: "left" | "right" | "center" | undefined;
+        }[];
+      }[];
+    };
+  }>;
+  CodeBlock: ComponentType<{ content: string; info?: string }>;
+  Blockquote: ComponentType<{ children: ReactNode }>;
+  List: ComponentType<
+    | { type: "ordered"; items: { children: ReactNode }[]; start?: number }
+    | { type: "unordered"; items: { children: ReactNode }[] }
+  >;
+  Heading: ComponentType<{ level: 1 | 2 | 3 | 4 | 5 | 6; children: ReactNode }>;
+  Paragraph: ComponentType<{ children: ReactNode }>;
+  ThematicBreak: ComponentType;
+  HtmlBlock: ComponentType<{ content: string }>;
+}
+
+interface InlineNodeComponents {
+  Text: ComponentType<{ text: string }>;
+  CodeSpan: ComponentType<{ text: string }>;
+  Emphasis: ComponentType<{ children: ReactNode }>;
+  Strong: ComponentType<{ children: ReactNode }>;
+  Link: ComponentType<{ href: string; title?: string; children: ReactNode }>;
+  Image: ComponentType<{ href: string; title?: string; alt: string }>;
+  HardBreak: ComponentType;
+  SoftBreak: ComponentType;
+  Html: ComponentType<{ content: string }>;
+}
+```

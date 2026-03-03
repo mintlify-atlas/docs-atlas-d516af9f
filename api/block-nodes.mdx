@@ -1,0 +1,456 @@
+---
+title: Block nodes
+description: Reference for all block-level AST node types returned by the parser
+---
+
+Block nodes represent structural elements in markdown that typically start on a new line. All block nodes are returned from the `parse()` method.
+
+## BlockNode type
+
+```typescript
+type BlockNode =
+  | TableNode
+  | ThematicBreakNode
+  | CodeBlockNode
+  | HeadingNode
+  | ParagraphNode
+  | BlockquoteNode
+  | ListNode
+  | HtmlBlockNode;
+```
+
+## HeadingNode
+
+Represents ATX-style (`# Heading`) and Setext-style headings.
+
+```typescript
+interface HeadingNode {
+  type: "heading";
+  level: 1 | 2 | 3 | 4 | 5 | 6;
+  children: Array<InlineNode>;
+}
+```
+
+<ResponseField name="type" type="string" required>
+  Always `"heading"`
+</ResponseField>
+
+<ResponseField name="level" type="number" required>
+  Heading level from 1-6, where 1 is the highest level (e.g., `#`) and 6 is the lowest (e.g., `######`)
+</ResponseField>
+
+<ResponseField name="children" type="InlineNode[]" required>
+  Array of inline nodes representing the heading content. See [Inline Nodes](/api/inline-nodes) for details.
+</ResponseField>
+
+### Example
+
+```typescript
+const nodes = parser.parse('## Hello *World*');
+// [
+//   {
+//     type: 'heading',
+//     level: 2,
+//     children: [
+//       { type: 'text', text: 'Hello ' },
+//       { type: 'emphasis', children: [{ type: 'text', text: 'World' }] }
+//     ]
+//   }
+// ]
+```
+
+## ParagraphNode
+
+Represents a paragraph of text.
+
+```typescript
+interface ParagraphNode {
+  type: "paragraph";
+  children: Array<InlineNode>;
+}
+```
+
+<ResponseField name="type" type="string" required>
+  Always `"paragraph"`
+</ResponseField>
+
+<ResponseField name="children" type="InlineNode[]" required>
+  Array of inline nodes representing the paragraph content
+</ResponseField>
+
+### Example
+
+```typescript
+const nodes = parser.parse('This is a paragraph with [a link](https://example.com).');
+// [
+//   {
+//     type: 'paragraph',
+//     children: [
+//       { type: 'text', text: 'This is a paragraph with ' },
+//       { type: 'link', href: 'https://example.com', children: [...] },
+//       { type: 'text', text: '.' }
+//     ]
+//   }
+// ]
+```
+
+## CodeBlockNode
+
+Represents both fenced code blocks (` ``` `) and indented code blocks.
+
+```typescript
+interface CodeBlockNode {
+  type: "code-block";
+  info?: string;
+  content: string;
+}
+```
+
+<ResponseField name="type" type="string" required>
+  Always `"code-block"`
+</ResponseField>
+
+<ResponseField name="info" type="string">
+  Info string from fenced code blocks, typically the language identifier (e.g., `"typescript"`, `"python"`). Undefined for indented code blocks.
+</ResponseField>
+
+<ResponseField name="content" type="string" required>
+  The raw code content as a string, including trailing newline
+</ResponseField>
+
+### Example
+
+<Tabs>
+  <Tab title="Fenced">
+    ```typescript
+    const markdown = `
+    \`\`\`typescript
+    const hello = "world";
+    \`\`\`
+    `;
+    
+    const nodes = parser.parse(markdown);
+    // [
+    //   {
+    //     type: 'code-block',
+    //     info: 'typescript',
+    //     content: 'const hello = "world";\n'
+    //   }
+    // ]
+    ```
+  </Tab>
+  <Tab title="Indented">
+    ```typescript
+    const markdown = `
+        const hello = "world";
+    `;
+    
+    const nodes = parser.parse(markdown);
+    // [
+    //   {
+    //     type: 'code-block',
+    //     content: 'const hello = "world";\n'
+    //   }
+    // ]
+    ```
+  </Tab>
+</Tabs>
+
+## BlockquoteNode
+
+Represents a blockquote, which can contain nested block nodes.
+
+```typescript
+interface BlockquoteNode {
+  type: "blockquote";
+  children: Array<BlockNode>;
+}
+```
+
+<ResponseField name="type" type="string" required>
+  Always `"blockquote"`
+</ResponseField>
+
+<ResponseField name="children" type="BlockNode[]" required>
+  Array of block nodes contained within the blockquote. Can include nested blockquotes, paragraphs, lists, etc.
+</ResponseField>
+
+### Example
+
+```typescript
+const markdown = `
+> This is a blockquote
+>
+> > Nested blockquote
+`;
+
+const nodes = parser.parse(markdown);
+// [
+//   {
+//     type: 'blockquote',
+//     children: [
+//       { type: 'paragraph', children: [...] },
+//       {
+//         type: 'blockquote',
+//         children: [{ type: 'paragraph', children: [...] }]
+//       }
+//     ]
+//   }
+// ]
+```
+
+## ListNode
+
+Represents ordered or unordered lists.
+
+```typescript
+type ListNode = {
+  type: "list";
+  tight: boolean;
+  items: Array<{ children: Array<BlockNode> }>;
+} & (
+  | { kind: "ordered"; start: number }
+  | { kind: "unordered"; marker: string }
+);
+```
+
+<ResponseField name="type" type="string" required>
+  Always `"list"`
+</ResponseField>
+
+<ResponseField name="tight" type="boolean" required>
+  Whether the list is tight (no blank lines between items) or loose (blank lines present). Affects rendering.
+</ResponseField>
+
+<ResponseField name="items" type="array" required>
+  Array of list items, where each item contains an array of block nodes
+  
+  <Expandable title="item structure">
+    <ResponseField name="children" type="BlockNode[]">
+      Block nodes contained within this list item (paragraphs, nested lists, code blocks, etc.)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="kind" type="string" required>
+  Either `"ordered"` or `"unordered"`
+</ResponseField>
+
+<ResponseField name="start" type="number">
+  Starting number for ordered lists (e.g., `1`, `5`, `10`). Only present when `kind` is `"ordered"`.
+</ResponseField>
+
+<ResponseField name="marker" type="string">
+  List marker character (`-`, `*`, or `+`) for unordered lists. Only present when `kind` is `"unordered"`.
+</ResponseField>
+
+### Example
+
+<Tabs>
+  <Tab title="Unordered">
+    ```typescript
+    const markdown = `
+    - Item 1
+    - Item 2
+      - Nested item
+    `;
+    
+    const nodes = parser.parse(markdown);
+    // [
+    //   {
+    //     type: 'list',
+    //     kind: 'unordered',
+    //     marker: '-',
+    //     tight: true,
+    //     items: [
+    //       { children: [{ type: 'paragraph', children: [...] }] },
+    //       {
+    //         children: [
+    //           { type: 'paragraph', children: [...] },
+    //           { type: 'list', kind: 'unordered', ... }
+    //         ]
+    //       }
+    //     ]
+    //   }
+    // ]
+    ```
+  </Tab>
+  <Tab title="Ordered">
+    ```typescript
+    const markdown = `
+    1. First item
+    2. Second item
+    5. Starting at 5
+    `;
+    
+    const nodes = parser.parse(markdown);
+    // [
+    //   {
+    //     type: 'list',
+    //     kind: 'ordered',
+    //     start: 1,
+    //     tight: true,
+    //     items: [...]
+    //   }
+    // ]
+    ```
+  </Tab>
+</Tabs>
+
+## TableNode
+
+Represents GitHub-Flavored Markdown (GFM) tables.
+
+```typescript
+interface TableNode {
+  type: "table";
+  head: {
+    cells: Array<{
+      align: "left" | "right" | "center" | undefined;
+      children: Array<InlineNode>;
+    }>;
+  };
+  body: {
+    rows: Array<{
+      cells: Array<{
+        align: "left" | "right" | "center" | undefined;
+        children: Array<InlineNode>;
+      }>;
+    }>;
+  };
+}
+```
+
+<ResponseField name="type" type="string" required>
+  Always `"table"`
+</ResponseField>
+
+<ResponseField name="head" type="object" required>
+  Table header row
+  
+  <Expandable title="properties">
+    <ResponseField name="cells" type="array">
+      Array of header cells
+      
+      <Expandable title="cell structure">
+        <ResponseField name="align" type="string">
+          Column alignment: `"left"`, `"right"`, `"center"`, or `undefined` for default alignment
+        </ResponseField>
+        <ResponseField name="children" type="InlineNode[]">
+          Inline content of the header cell
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="body" type="object" required>
+  Table body containing data rows
+  
+  <Expandable title="properties">
+    <ResponseField name="rows" type="array">
+      Array of body rows
+      
+      <Expandable title="row structure">
+        <ResponseField name="cells" type="array">
+          Array of cells in this row, with same structure as header cells
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```typescript
+const markdown = `
+| Name | Age | City |
+| :--- | :-: | ---: |
+| Alice | 30 | NYC |
+| Bob | 25 | SF |
+`;
+
+const nodes = parser.parse(markdown);
+// [
+//   {
+//     type: 'table',
+//     head: {
+//       cells: [
+//         { align: 'left', children: [{ type: 'text', text: 'Name' }] },
+//         { align: 'center', children: [{ type: 'text', text: 'Age' }] },
+//         { align: 'right', children: [{ type: 'text', text: 'City' }] }
+//       ]
+//     },
+//     body: {
+//       rows: [
+//         {
+//           cells: [
+//             { align: 'left', children: [{ type: 'text', text: 'Alice' }] },
+//             { align: 'center', children: [{ type: 'text', text: '30' }] },
+//             { align: 'right', children: [{ type: 'text', text: 'NYC' }] }
+//           ]
+//         },
+//         // ... second row
+//       ]
+//     }
+//   }
+// ]
+```
+
+## ThematicBreakNode
+
+Represents a horizontal rule / thematic break (`---`, `***`, `___`).
+
+```typescript
+interface ThematicBreakNode {
+  type: "thematic-break";
+}
+```
+
+<ResponseField name="type" type="string" required>
+  Always `"thematic-break"`
+</ResponseField>
+
+### Example
+
+```typescript
+const nodes = parser.parse('---');
+// [{ type: 'thematic-break' }]
+```
+
+## HtmlBlockNode
+
+Represents raw HTML block content.
+
+```typescript
+interface HtmlBlockNode {
+  type: "html-block";
+  content: string;
+}
+```
+
+<ResponseField name="type" type="string" required>
+  Always `"html-block"`
+</ResponseField>
+
+<ResponseField name="content" type="string" required>
+  Raw HTML content as a string, exactly as it appears in the source
+</ResponseField>
+
+### Example
+
+```typescript
+const markdown = `
+<div class="custom">
+  <p>HTML content</p>
+</div>
+`;
+
+const nodes = parser.parse(markdown);
+// [
+//   {
+//     type: 'html-block',
+//     content: '<div class="custom">\n  <p>HTML content</p>\n</div>'
+//   }
+// ]
+```

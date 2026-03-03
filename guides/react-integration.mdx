@@ -1,0 +1,532 @@
+---
+title: React integration
+description: Render parsed markdown content in React applications with the Markdown component
+---
+
+The `react-markdown-parser` package provides a React Server Component for rendering markdown content with full support for custom component styling.
+
+## Installation
+
+Install the React package:
+
+```bash
+npm install react-markdown-parser
+```
+
+<Note>
+This package requires `markdown-parser` as a peer dependency. It will be installed automatically if not present.
+</Note>
+
+## Basic usage
+
+Import the `Markdown` component and pass your content:
+
+```tsx
+import { Markdown } from "react-markdown-parser";
+
+export function Article({ content }: { content: string }) {
+  return (
+    <div className="prose">
+      <Markdown content={content} />
+    </div>
+  );
+}
+```
+
+<Tip>
+The `Markdown` component is a React Server Component, making it perfect for server-side rendering and static generation.
+</Tip>
+
+## How it works
+
+Under the hood, the Markdown component:
+
+1. Parses the markdown content using `MarkdownParser`
+2. Converts block and inline nodes to React elements
+3. Applies custom components (if provided)
+4. Returns a React element tree
+
+```tsx
+// Internally, the component does:
+const nodes = new MarkdownParser().parse(content);
+return nodes.map(node => <BlockNodeComponent node={node} />);
+```
+
+## Default rendering
+
+Without customization, the component renders semantic HTML:
+
+<Steps>
+
+<Step title="Block elements">
+
+```tsx
+<Markdown content="# Heading\n\nThis is a **paragraph**." />
+
+// Renders:
+// <h1>Heading</h1>
+// <p>This is a <strong>paragraph</strong>.</p>
+```
+
+</Step>
+
+<Step title="Lists">
+
+```tsx
+<Markdown content="- Item 1\n- Item 2\n- Item 3" />
+
+// Renders:
+// <ul>
+//   <li>Item 1</li>
+//   <li>Item 2</li>
+//   <li>Item 3</li>
+// </ul>
+```
+
+</Step>
+
+<Step title="Code blocks">
+
+```tsx
+<Markdown content="```js\nconsole.log('hello');\n```" />
+
+// Renders:
+// <pre>console.log('hello');
+// </pre>
+```
+
+</Step>
+
+</Steps>
+
+## Styling with Tailwind
+
+Use Tailwind's typography plugin for instant styling:
+
+```tsx
+import { Markdown } from "react-markdown-parser";
+
+export function StyledArticle({ content }: { content: string }) {
+  return (
+    <article className="prose prose-slate lg:prose-lg mx-auto">
+      <Markdown content={content} />
+    </article>
+  );
+}
+```
+
+## Customizing specific elements
+
+Override individual component rendering with the `components` prop:
+
+```tsx
+import { Markdown } from "react-markdown-parser";
+
+export function Article({ content }: { content: string }) {
+  return (
+    <Markdown
+      content={content}
+      components={{
+        Heading: ({ level, children }) => {
+          const Heading = `h${level}` as const;
+          return (
+            <Heading className="font-bold text-blue-900">
+              {children}
+            </Heading>
+          );
+        },
+        
+        Paragraph: ({ children }) => (
+          <p className="my-4 leading-relaxed text-gray-700">
+            {children}
+          </p>
+        ),
+        
+        Link: ({ href, title, children }) => (
+          <a 
+            href={href} 
+            title={title}
+            className="text-blue-500 hover:underline"
+          >
+            {children}
+          </a>
+        ),
+      }}
+    />
+  );
+}
+```
+
+## Available component overrides
+
+You can customize any of these components:
+
+### Block components
+
+<Tabs>
+  <Tab title="Heading">
+
+```tsx
+Heading: ({ level, children }) => ReactNode
+// level: 1 | 2 | 3 | 4 | 5 | 6
+```
+
+  </Tab>
+  <Tab title="Paragraph">
+
+```tsx
+Paragraph: ({ children }) => ReactNode
+```
+
+  </Tab>
+  <Tab title="CodeBlock">
+
+```tsx
+CodeBlock: ({ content, info }) => ReactNode
+// content: the code string
+// info: language identifier (e.g., "javascript")
+```
+
+  </Tab>
+  <Tab title="List">
+
+```tsx
+List: (props) => ReactNode
+// props for ordered: { type: "ordered", items: [...], start?: number }
+// props for unordered: { type: "unordered", items: [...] }
+```
+
+  </Tab>
+  <Tab title="Blockquote">
+
+```tsx
+Blockquote: ({ children }) => ReactNode
+```
+
+  </Tab>
+  <Tab title="Table">
+
+```tsx
+Table: ({ head, body }) => ReactNode
+// head: { cells: [{ children, align }] }
+// body: { rows: [{ cells: [{ children, align }] }] }
+```
+
+  </Tab>
+  <Tab title="ThematicBreak">
+
+```tsx
+ThematicBreak: () => ReactNode
+// Renders <hr /> by default
+```
+
+  </Tab>
+</Tabs>
+
+### Inline components
+
+<Tabs>
+  <Tab title="Text">
+
+```tsx
+Text: ({ text }) => ReactNode
+```
+
+  </Tab>
+  <Tab title="Strong">
+
+```tsx
+Strong: ({ children }) => ReactNode
+```
+
+  </Tab>
+  <Tab title="Emphasis">
+
+```tsx
+Emphasis: ({ children }) => ReactNode
+```
+
+  </Tab>
+  <Tab title="Link">
+
+```tsx
+Link: ({ href, title, children }) => ReactNode
+```
+
+  </Tab>
+  <Tab title="Image">
+
+```tsx
+Image: ({ href, title, alt }) => ReactNode
+```
+
+  </Tab>
+  <Tab title="CodeSpan">
+
+```tsx
+CodeSpan: ({ text }) => ReactNode
+```
+
+  </Tab>
+</Tabs>
+
+## Complete styling example
+
+Here's a fully customized markdown renderer from the demo:
+
+```tsx
+import { Markdown } from "react-markdown-parser";
+
+export default function StyledMarkdown({ content }: { content: string }) {
+  return (
+    <div className="max-w-4xl mx-auto py-10 px-8">
+      <Markdown
+        content={content}
+        components={{
+          Heading: ({ children, level }) => {
+            const Heading = `h${level}` as const;
+            const sizes = {
+              1: "text-3xl leading-10",
+              2: "text-2xl leading-9",
+              3: "text-xl leading-8",
+              4: "text-lg leading-7",
+              5: "text-base leading-6",
+              6: "text-sm leading-5",
+            };
+            return (
+              <Heading className={`mt-6 mb-1.5 font-semibold ${sizes[level]}`}>
+                {children}
+              </Heading>
+            );
+          },
+          
+          Paragraph: ({ children }) => (
+            <p className="my-3 leading-relaxed text-pretty">{children}</p>
+          ),
+          
+          CodeBlock: ({ content }) => (
+            <pre className="px-4 py-3 rounded-md border overflow-x-auto">
+              <code className="font-mono">{content}</code>
+            </pre>
+          ),
+          
+          CodeSpan: ({ text }) => (
+            <code className="bg-gray-100 text-[85%] px-1 py-1.5 rounded-sm">
+              {text}
+            </code>
+          ),
+          
+          Blockquote: ({ children }) => (
+            <blockquote className="my-4 border-l-4 border-gray-200 pl-4">
+              {children}
+            </blockquote>
+          ),
+          
+          List: (props) => {
+            if (props.type === "ordered") {
+              return (
+                <ol className="my-3 pl-5 list-decimal" start={props.start}>
+                  {props.items.map((item, index) => (
+                    <li key={index}>{item.children}</li>
+                  ))}
+                </ol>
+              );
+            }
+            return (
+              <ul className="my-3 pl-5 list-disc">
+                {props.items.map((item, index) => (
+                  <li key={index}>{item.children}</li>
+                ))}
+              </ul>
+            );
+          },
+          
+          Link: ({ href, title, children }) => (
+            <a 
+              href={href} 
+              title={title}
+              className="text-blue-500 underline hover:text-blue-600"
+            >
+              {children}
+            </a>
+          ),
+          
+          Strong: ({ children }) => (
+            <strong className="font-semibold">{children}</strong>
+          ),
+          
+          Emphasis: ({ children }) => (
+            <em className="italic">{children}</em>
+          ),
+          
+          ThematicBreak: () => (
+            <hr className="my-6 border-0 border-t border-gray-200" />
+          ),
+          
+          Table: ({ head, body }) => (
+            <table className="w-full my-4 border-collapse">
+              <thead className="border-b-2">
+                <tr>
+                  {head.cells.map((cell, index) => (
+                    <th 
+                      key={index} 
+                      align={cell.align}
+                      className="px-3 py-2 text-left"
+                    >
+                      {cell.children}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {body.rows.map((row, index) => (
+                  <tr key={index} className="border-b">
+                    {row.cells.map((cell, index) => (
+                      <td 
+                        key={index} 
+                        align={cell.align}
+                        className="px-3 py-2"
+                      >
+                        {cell.children}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ),
+        }}
+      />
+    </div>
+  );
+}
+```
+
+## Syntax highlighting
+
+Add syntax highlighting to code blocks using a library like Shiki or Prism:
+
+<CodeGroup>
+
+```tsx With Shiki
+import { codeToHtml } from "shiki";
+import { Markdown } from "react-markdown-parser";
+
+export async function HighlightedMarkdown({ content }: { content: string }) {
+  return (
+    <Markdown
+      content={content}
+      components={{
+        CodeBlock: async ({ content, info }) => {
+          const html = await codeToHtml(content, {
+            lang: info || "text",
+            theme: "github-dark",
+          });
+          return <div dangerouslySetInnerHTML={{ __html: html }} />;
+        },
+      }}
+    />
+  );
+}
+```
+
+```tsx With Prism (client-side)
+import Prism from "prismjs";
+import "prismjs/themes/prism-tomorrow.css";
+import { Markdown } from "react-markdown-parser";
+
+export function HighlightedMarkdown({ content }: { content: string }) {
+  return (
+    <Markdown
+      content={content}
+      components={{
+        CodeBlock: ({ content, info }) => {
+          const language = info || "text";
+          const html = Prism.highlight(
+            content,
+            Prism.languages[language] || Prism.languages.text,
+            language
+          );
+          return (
+            <pre className={`language-${language}`}>
+              <code dangerouslySetInnerHTML={{ __html: html }} />
+            </pre>
+          );
+        },
+      }}
+    />
+  );
+}
+```
+
+</CodeGroup>
+
+<Warning>
+When using `dangerouslySetInnerHTML`, ensure the content is trusted and properly sanitized.
+</Warning>
+
+## Link validation
+
+Custom Link components can validate and sanitize URLs:
+
+```tsx
+Link: ({ href, title, children }) => {
+  // Validate URL
+  const isExternal = href.startsWith("http");
+  const isValid = /^(https?:\/\/|\/)/.test(href);
+  
+  if (!isValid) {
+    return <span className="text-red-500">{children}</span>;
+  }
+  
+  return (
+    <a
+      href={href}
+      title={title}
+      target={isExternal ? "_blank" : undefined}
+      rel={isExternal ? "noopener noreferrer" : undefined}
+      className="text-blue-500 hover:underline"
+    >
+      {children}
+    </a>
+  );
+}
+```
+
+<Note>
+The default Link component includes basic URL validation to prevent javascript: and other dangerous protocols.
+</Note>
+
+## TypeScript types
+
+The components prop is fully typed for excellent IDE support:
+
+```tsx
+import { Markdown, type MarkdownComponents } from "react-markdown-parser";
+
+const customComponents: Partial<MarkdownComponents> = {
+  Heading: ({ level, children }) => {
+    // TypeScript knows level is 1 | 2 | 3 | 4 | 5 | 6
+    return <h1>{children}</h1>;
+  },
+  // ... other components
+};
+
+export function Article({ content }: { content: string }) {
+  return <Markdown content={content} components={customComponents} />;
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+
+<Card title="Custom components" icon="palette" href="/guides/custom-components">
+  Advanced component customization patterns
+</Card>
+
+<Card title="API reference" icon="book" href="/api/react/markdown-component">
+  Explore the full Markdown component API
+</Card>
+
+</CardGroup>

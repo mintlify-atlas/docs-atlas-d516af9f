@@ -1,0 +1,105 @@
+---
+title: Introduction
+description: A streaming-capable markdown parser for TypeScript with full CommonMark support and React integration
+---
+
+# Introduction
+
+A modern markdown parser built for TypeScript that handles both complete documents and incremental streaming content. Perfect for parsing LLM markdown streams, building documentation sites, or rendering user-generated content.
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Get started with npm, yarn, or pnpm in seconds
+  </Card>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Parse your first markdown in under 5 minutes
+  </Card>
+  <Card title="API reference" icon="code" href="/api/markdown-parser">
+    Explore the complete API documentation
+  </Card>
+  <Card title="React integration" icon="react" href="/guides/react-integration">
+    Render markdown with React Server Components
+  </Card>
+</CardGroup>
+
+## Why markdown-parser?
+
+<CardGroup cols={2}>
+  <Card title="Streaming support" icon="stream">
+    Built-in support for incremental parsing. Feed growing input and emit only finalized blocks - ideal for LLM streams.
+  </Card>
+  <Card title="CommonMark compliant" icon="check">
+     100% support for the CommonMark specification plus GitHub Flavored Markdown tables.
+  </Card>
+  <Card title="Fully typed" icon="code">
+    Complete TypeScript types for all nodes and API methods. Get autocomplete and type safety out of the box.
+  </Card>
+  <Card title="React ready" icon="react">
+    Optional React package for server-side rendering with customizable components.
+  </Card>
+</CardGroup>
+
+## Features
+
+### Block nodes
+
+Supports all CommonMark block-level elements:
+
+- Headings (ATX and setext style)
+- Paragraphs
+- Code blocks (fenced and indented)
+- Thematic breaks (horizontal rules)
+- HTML blocks
+- Blockquotes
+- Lists (ordered and unordered)
+- Link reference definitions
+- Tables (GitHub Flavored Markdown)
+
+### Inline nodes
+
+Full support for inline formatting:
+
+- Text and code spans
+- Hard and soft breaks
+- Inline HTML
+- Autolinks, links, and images
+- Emphasis and strong emphasis
+
+## How it works
+
+The parser converts markdown text into a structured, fully-typed AST (Abstract Syntax Tree) of block and inline nodes. You can parse complete documents or use streaming mode to handle incremental content:
+
+```typescript
+import { MarkdownParser } from "markdown-parser";
+
+const parser = new MarkdownParser();
+
+// Parse complete markdown
+const nodes = parser.parse("# Hello World\nThis is a paragraph.");
+```
+
+In streaming mode, the parser maintains internal state across calls and returns only blocks that have been finalized since the last parse:
+
+```typescript
+// Parse incrementally as content arrives
+const partialNodes = parser.parse("# Hello World\nThis", { stream: true });
+// Returns: [{ type: "heading", level: 1, children: [...] }]
+
+const moreNodes = parser.parse(" is a paragraph.\n\n", { stream: true });
+// Returns: [{ type: "paragraph", children: [...] }]
+```
+
+<Tip>
+When streaming is enabled, link references might not resolve immediately since their definitions could arrive in later chunks.
+</Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Install the package" icon="download" href="/installation">
+    Choose your package manager and install markdown-parser
+  </Card>
+  <Card title="Follow the quickstart" icon="rocket" href="/quickstart">
+    Parse your first markdown document in minutes
+  </Card>
+</CardGroup>

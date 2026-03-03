@@ -1,0 +1,329 @@
+---
+title: Streaming mode
+description: Parse markdown incrementally as it arrives from LLM outputs using streaming mode
+---
+
+Streaming mode allows you to parse markdown incrementally as new content arrives, making it ideal for processing LLM outputs in real-time. The parser buffers incomplete blocks and only emits finalized, stable nodes.
+
+## How streaming mode works
+
+When `stream: true` is enabled, the parser:
+
+1. Maintains internal state across multiple `parse()` calls
+2. Buffers incomplete blocks until they're fully closed
+3. Returns only stable, finalized blocks
+4. Continues parsing where it left off on the next call
+
+<Note>
+In streaming mode, the parser keeps track of open blocks across calls. You must use the same parser instance for all chunks in a stream.
+</Note>
+
+## Basic streaming example
+
+Here's how to parse markdown as it streams in:
+
+<Steps>
+
+<Step title="Create a parser instance">
+
+```typescript
+import { MarkdownParser } from "markdown-parser";
+
+const parser = new MarkdownParser();
+```
+
+</Step>
+
+<Step title="Parse the first chunk">
+
+```typescript
+// First chunk arrives
+const nodes1 = parser.parse("# Hello World\nThis", { stream: true });
+
+console.log(nodes1);
+// [{ type: "heading", level: 1, children: [{ type: "text", text: "Hello World" }] }]
+// The paragraph is NOT emitted - it's still open
+```
+
+</Step>
+
+<Step title="Continue with more chunks">
+
+```typescript
+// More content arrives
+const nodes2 = parser.parse(" is a paragraph\n\nThis is another paragraph.", { stream: true });
+
+console.log(nodes2);
+// [{ type: "paragraph", children: [{ type: "text", text: "This is a paragraph" }] }]
+// First paragraph is now closed, but second one remains open
+```
+
+</Step>
+
+<Step title="Finalize remaining blocks">
+
+```typescript
+// Close all remaining open blocks
+const nodes3 = parser.parse("", { stream: false });
+
+console.log(nodes3);
+// [{ type: "paragraph", children: [{ type: "text", text: "This is another paragraph." }] }]
+```
+
+</Step>
+
+</Steps>
+
+## When blocks are emitted
+
+Understanding when the parser emits blocks is crucial for streaming:
+
+| Block Type | Emitted When |
+|------------|-------------|
+| Heading | Immediately (single line) |
+| Paragraph | After blank line or new block starts |
+| Code block (fenced) | After closing fence encountered |
+| Code block (indented) | After non-indented line |
+| List | After blank line or content ends |
+| Blockquote | After content ends |
+| Table | After non-table line |
+| Thematic break | Immediately (single line) |
+
+## Streaming LLM output
+
+Here's a practical example of parsing markdown from an LLM as it streams:
+
+```typescript
+import { MarkdownParser } from "markdown-parser";
+
+async function streamLLMResponse(stream: ReadableStream) {
+  const parser = new MarkdownParser();
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      
+      if (done) {
+        // Finalize any remaining open blocks
+        const finalNodes = parser.parse("", { stream: false });
+        if (finalNodes.length > 0) {
+          displayNodes(finalNodes);
+        }
+        break;
+      }
+
+      // Parse the chunk with streaming enabled
+      const chunk = decoder.decode(value, { stream: true });
+      const nodes = parser.parse(chunk, { stream: true });
+      
+      // Only finalized blocks are returned
+      if (nodes.length > 0) {
+        displayNodes(nodes);
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function displayNodes(nodes: BlockNode[]) {
+  // Render or process the finalized nodes
+  console.log("New finalized blocks:", nodes);
+}
+```
+
+## Handling code blocks
+
+Code blocks require special attention in streaming mode:
+
+<Tabs>
+  <Tab title="Fenced code blocks">
+
+```typescript
+const parser = new MarkdownParser();
+
+// Start of code block
+let nodes = parser.parse("```javascript\n", { stream: true });
+console.log(nodes); // []
+
+// Content inside code block
+nodes = parser.parse("console.log('hello');\n", { stream: true });
+console.log(nodes); // []
+
+// Close code block
+nodes = parser.parse("```\n", { stream: true });
+console.log(nodes);
+// [{ type: "code-block", content: "console.log('hello');\n", info: "javascript" }]
+```
+
+  </Tab>
+  <Tab title="Indented code blocks">
+
+```typescript
+const parser = new MarkdownParser();
+
+// Indented code (4 spaces)
+let nodes = parser.parse("    const x = 1;\n", { stream: true });
+console.log(nodes); // [] - still building
+
+nodes = parser.parse("    const y = 2;\n", { stream: true });
+console.log(nodes); // [] - still building
+
+// Non-indented line closes the block
+nodes = parser.parse("Regular text\n", { stream: true });
+console.log(nodes);
+// [{ type: "code-block", content: "const x = 1;\nconst y = 2;\n" }]
+```
+
+  </Tab>
+</Tabs>
+
+## Managing list items
+
+Lists in streaming mode emit items as they close:
+
+```typescript
+const parser = new MarkdownParser();
+
+// First list item starts
+let nodes = parser.parse("1. First item\n", { stream: true });
+console.log(nodes); // [] - list is still open
+
+// Second item starts (closes first)
+nodes = parser.parse("2. Second item\n", { stream: true });
+console.log(nodes); // [] - list continues
+
+// Blank line closes the list
+nodes = parser.parse("\n", { stream: true });
+console.log(nodes);
+// [{ type: "list", kind: "ordered", items: [...], tight: true }]
+```
+
+<Warning>
+Nested lists can remain open for multiple chunks. Always finalize with `stream: false` at the end.
+</Warning>
+
+## Link reference definitions
+
+The CommonMark spec allows link reference definitions to appear after their usage:
+
+```typescript
+const parser = new MarkdownParser();
+
+// Link reference before definition
+let nodes = parser.parse("[link][ref]\n\n", { stream: true });
+console.log(nodes);
+// Link might not resolve yet if definition comes later
+
+// Definition arrives in later chunk
+nodes = parser.parse("[ref]: https://example.com\n", { stream: true });
+// Parser resolves references in finalized blocks
+```
+
+<Tip>
+When streaming, links may initially appear unresolved if their reference definition arrives in a later chunk.
+</Tip>
+
+## Best practices
+
+<AccordionGroup>
+
+<Accordion title="Always finalize the stream">
+
+Call `parse("", { stream: false })` at the end to close any remaining open blocks:
+
+```typescript
+const parser = new MarkdownParser();
+
+// ... parse streaming chunks ...
+
+// Always finalize
+const finalNodes = parser.parse("", { stream: false });
+```
+
+</Accordion>
+
+<Accordion title="Use one parser per stream">
+
+Don't reuse parser instances across independent streams:
+
+```typescript
+// ✅ Good: New parser for each stream
+const parser1 = new MarkdownParser();
+processStream1(parser1);
+
+const parser2 = new MarkdownParser();
+processStream2(parser2);
+
+// ❌ Bad: Reusing parser
+const parser = new MarkdownParser();
+processStream1(parser);
+processStream2(parser); // State is mixed!
+```
+
+</Accordion>
+
+<Accordion title="Buffer small chunks">
+
+For very small chunks, consider buffering to reduce parser overhead:
+
+```typescript
+let buffer = "";
+const MIN_CHUNK_SIZE = 50;
+
+for await (const chunk of stream) {
+  buffer += chunk;
+  
+  if (buffer.length >= MIN_CHUNK_SIZE || isEndOfStream) {
+    const nodes = parser.parse(buffer, { stream: true });
+    displayNodes(nodes);
+    buffer = "";
+  }
+}
+```
+
+</Accordion>
+
+</AccordionGroup>
+
+## Streaming vs. non-streaming comparison
+
+<CodeGroup>
+
+```typescript Non-streaming (default)
+const parser = new MarkdownParser();
+
+// All blocks finalized immediately
+const nodes = parser.parse("# Title\nIncomplete paragraph");
+// Returns both heading AND paragraph (finalized)
+```
+
+```typescript Streaming mode
+const parser = new MarkdownParser();
+
+// Only closed blocks returned
+const nodes = parser.parse("# Title\nIncomplete paragraph", { stream: true });
+// Returns only heading (paragraph still open)
+
+// Finalize later
+const remaining = parser.parse("", { stream: false });
+// Returns the paragraph
+```
+
+</CodeGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+
+<Card title="React integration" icon="react" href="/guides/react-integration">
+  Use streaming with React components
+</Card>
+
+<Card title="API reference" icon="book" href="/api/markdown-parser">
+  Explore the full MarkdownParser API
+</Card>
+
+</CardGroup>

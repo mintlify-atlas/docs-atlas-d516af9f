@@ -1,0 +1,120 @@
+---
+title: Installation
+description: Install markdown-parser using npm, yarn, or pnpm
+---
+
+# Installation
+
+Get started with markdown-parser by installing it with your preferred package manager.
+
+## Requirements
+
+<Note>
+markdown-parser requires Node.js 18 or higher.
+</Note>
+
+## Core parser
+
+Install the core `markdown-parser` package to parse markdown into a structured AST:
+
+<CodeGroup>
+
+```bash npm
+npm install markdown-parser
+```
+
+```bash yarn
+yarn add markdown-parser
+```
+
+```bash pnpm
+pnpm add markdown-parser
+```
+
+</CodeGroup>
+
+The core package provides:
+
+- `MarkdownParser` class for parsing markdown text
+- Full TypeScript types for all block and inline nodes
+- Streaming mode support for incremental parsing
+- Zero dependencies (except for HTML entity decoding)
+
+## React integration
+
+If you're using React and want to render markdown with Server Components, install the React package:
+
+<CodeGroup>
+
+```bash npm
+npm install react-markdown-parser
+```
+
+```bash yarn
+yarn add react-markdown-parser
+```
+
+```bash pnpm
+pnpm add react-markdown-parser
+```
+
+</CodeGroup>
+
+<Note>
+The `react-markdown-parser` package has peer dependencies on `react` ^19.2.4 and `react-dom` ^19.2.4. It automatically includes `markdown-parser` as a dependency.
+</Note>
+
+The React package provides:
+
+- `Markdown` component for rendering markdown content
+- Customizable component overrides for all node types
+- Server-only rendering (optimized for React Server Components)
+- Type-safe component props
+
+## Verify installation
+
+Verify the installation by checking the package version:
+
+<CodeGroup>
+
+```bash npm
+npm list markdown-parser
+```
+
+```bash yarn
+yarn list markdown-parser
+```
+
+```bash pnpm
+pnpm list markdown-parser
+```
+
+</CodeGroup>
+
+## TypeScript configuration
+
+The packages are built with TypeScript and include type definitions out of the box. No additional `@types` packages are needed.
+
+For the best experience, ensure your `tsconfig.json` includes:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "strict": true
+  }
+}
+```
+
+<Tip>
+Both packages use ES modules. If you're using CommonJS, ensure your bundler or Node.js configuration supports importing ES modules.
+</Tip>
+
+## Next steps
+
+<Card title="Quick start guide" icon="rocket" href="/quickstart">
+  Learn how to parse your first markdown document
+</Card>
