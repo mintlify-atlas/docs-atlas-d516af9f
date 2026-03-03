@@ -1,0 +1,79 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Markdown Parser",
+  "projectDescription": "A streaming-capable markdown parser for TypeScript with full CommonMark support and React integration.",
+  "theme": "palm",
+  "primaryColor": "#3B82F6",
+  "lightColor": "#60A5FA",
+  "darkColor": "#2563EB",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/streaming",
+              "concepts/node-types",
+              "concepts/commonmark-compliance"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/basic-parsing",
+              "guides/streaming-mode",
+              "guides/react-integration",
+              "guides/custom-components"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core API",
+            "pages": [
+              "api/markdown-parser",
+              "api/block-nodes",
+              "api/inline-nodes"
+            ]
+          },
+          {
+            "group": "React API",
+            "pages": [
+              "api/react/markdown-component",
+              "api/react/custom-renderers"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Streaming/incremental parsing for LLM markdown streams",
+    "100% CommonMark specification compliance",
+    "GitHub Flavored Markdown tables support",
+    "Fully typed TypeScript API",
+    "React server component integration",
+    "Customizable component rendering"
+  ],
+  "publicApiSurface": [
+    "MarkdownParser",
+    "MarkdownParser.parse()",
+    "BlockNode",
+    "InlineNode",
+    "Markdown (React component)",
+    "parseInline()"
+  ]
+}
